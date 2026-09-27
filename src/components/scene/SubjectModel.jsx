@@ -1,7 +1,8 @@
 import { useThree } from '@react-three/fiber';
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { SUBJECT_TYPES } from '../../config/sceneConfig.js';
 import { useSubjectState } from '../../state/subjectStore.js';
+import { installSlopeBias } from '../../utils/shadowSides.js';
 import { MannequinSubject } from './MannequinSubject.jsx';
 
 /**
@@ -33,7 +34,17 @@ export function SubjectModel() {
   const { subjectType, model } = useSubjectState();
   const showCustom = subjectType === SUBJECT_TYPES.CUSTOM && model.object !== null;
   const subjectKey = showCustom ? `custom-${model.id}` : SUBJECT_TYPES.MANNEQUIN;
+  const groupRef = useRef(null);
+
+  // Per-light slope bias in the shadow pass for every subject mesh (shadowSides.js).
+  useLayoutEffect(() => {
+    if (groupRef.current) installSlopeBias(groupRef.current);
+  }, [subjectKey]);
   useShadowRefreshOnChange(subjectKey);
 
-  return showCustom ? <primitive key={subjectKey} object={model.object} /> : <MannequinSubject />;
+  return (
+    <group ref={groupRef} name="subject">
+      {showCustom ? <primitive key={subjectKey} object={model.object} /> : <MannequinSubject />}
+    </group>
+  );
 }

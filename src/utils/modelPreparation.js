@@ -2,11 +2,13 @@
  * Prepares a loaded glTF scene to act as the simulator's subject:
  *   1. strip embedded lights/cameras (KHR_lights_punctual would add light the
  *      simulator doesn't control)
- *   2. shadows on every mesh, while keeping the model's own PBR materials
+ *   2. shadows on every mesh, while keeping the model's own PBR materials;
+ *      all materials double-sided (side + shadowSide) so thin meshes block light
  *   3. auto-center + auto-scale with THREE.Box3 (feet on y = 0, centered on
  *      x = 0 / z = 0, height = SUBJECT_CONFIG.targetHeightM)
  */
 import { Box3, Group, MeshStandardMaterial, Vector3 } from 'three';
+import { enableDoubleSidedShadows } from './shadowSides.js';
 
 /** Removes lights and cameras shipped inside the model. */
 export function stripEmbeddedLightsAndCameras(root) {
@@ -77,7 +79,12 @@ export function prepareMeshesForLighting(root) {
 
   // Textures are now owned by the lit copies; release only the old materials.
   for (const basic of converted.keys()) basic.dispose();
-  return { meshes, unlitMaterialsConverted: converted.size };
+
+  // Double-sided materials; thin meshes (hair cards, planes) cast shadows from
+  // both faces or light bleeds through them (shadowSides.js). Runs after the
+  // unlit -> PBR swap so the new materials are included.
+  const sides = enableDoubleSidedShadows(root);
+  return { meshes, unlitMaterialsConverted: converted.size, ...sides };
 }
 
 /** Triangles, unique materials and textures (for the panel readout). */
