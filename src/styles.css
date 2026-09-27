@@ -462,3 +462,119 @@ body,
   background: color-mix(in srgb, var(--color-accent) 25%, transparent);
   color: var(--color-text);
 }
+
+
+/* ---------- Mode tabs (Lighting / Camera) ---------- */
+.control-panel [hidden] {
+  display: none !important;
+}
+
+.control-panel__mode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+}
+
+.mode-tabs__tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mode-tabs__tab small {
+  font-size: 11px;
+}
+
+.mode-tabs__tab:hover {
+  color: var(--color-text);
+}
+
+.mode-tabs__tab--active {
+  color: var(--color-text);
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+.camera-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field__hint--warning {
+  color: var(--color-light-on);
+}
+
+/* ---------- Viewfinder overlay (camera mode) ---------- */
+.viewfinder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  container-type: size;
+}
+
+/* Largest centered rectangle of the sensor's aspect ratio (matches frameCanvasFit). */
+.viewfinder__frame {
+  position: relative;
+  width: min(100cqw, 100cqh * var(--frame-aspect));
+  aspect-ratio: var(--frame-aspect);
+  outline: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, var(--mask-opacity));
+}
+
+.viewfinder__thirds {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, transparent calc(33.333% - 0.5px), rgba(255, 255, 255, 0.18) calc(33.333% - 0.5px), rgba(255, 255, 255, 0.18) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
+    linear-gradient(to right, transparent calc(66.667% - 0.5px), rgba(255, 255, 255, 0.18) calc(66.667% - 0.5px), rgba(255, 255, 255, 0.18) calc(66.667% + 0.5px), transparent calc(66.667% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(33.333% - 0.5px), rgba(255, 255, 255, 0.18) calc(33.333% - 0.5px), rgba(255, 255, 255, 0.18) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(66.667% - 0.5px), rgba(255, 255, 255, 0.18) calc(66.667% - 0.5px), rgba(255, 255, 255, 0.18) calc(66.667% + 0.5px), transparent calc(66.667% + 0.5px));
+}
+
+.viewfinder__info {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 18px 12px 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #f2f2f2;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.viewfinder__ok {
+  color: #7ee08a;
+}
+
+.viewfinder__warn {
+  color: var(--color-light-on);
+}
