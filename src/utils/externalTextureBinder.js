@@ -12,9 +12,13 @@
  *   "texture.png"         -> the only material of a single-material model, map
  * Tokens come from camelCase / "_" / "-" / "." / space splits of the NFC,
  * lower-cased names. Slot keywords are read from the end of the name; the
- * rest must match the material's (or its mesh's) name tokens, ignoring noise
- * such as "mat", "material", "001". Ambiguous or unmatched files are reported,
- * never guessed. Slots the model already fills are never overwritten.
+ * rest ("MAT_Unagi_Body_1_UI") is matched against material and mesh names:
+ *   1. exact name   — all tokens, numbers included ("body 1" ≠ "body 2")
+ *   2. token subset — every file token appears in the name, numbers included
+ *   3. loose        — noise words ("mat", "material") and pure numbers ignored
+ * The first stage with exactly one candidate wins. Ambiguous or unmatched
+ * files are reported, never guessed. Slots the model already fills are never
+ * overwritten.
  *
  * Textures are created like GLTFLoader's own (ImageBitmap, flipY = false for
  * glTF UVs, repeat wrapping, mipmaps); color slots are tagged SRGBColorSpace.
@@ -62,7 +66,11 @@ export function tokenize(name) {
 }
 const meaningful = (tokens) => tokens.filter((token) => !NOISE_TOKENS.has(token) && !/^\d+$/.test(token));
 
-/** Splits a file name into { key tokens, slot rule }. */
+/**
+ * Splits a file name into the name part and its slot rule.
+ * @returns {{ nameTokens: string[], keyTokens: string[], rule: object | null }}
+ *   nameTokens: every token of the name part (numbers kept), keyTokens: loose form
+ */
 export function classifyTextureName(fileName) {
   const tokens = tokenize(fileName);
   while (tokens.length > 1 && TRAILING_NOISE.test(tokens[tokens.length - 1])) tokens.pop();
@@ -74,37 +82,75 @@ export function classifyTextureName(fileName) {
       const hit = rule.words.find((word) => word === phrase || (take > 1 && word === joined));
       if (!hit) continue;
       if (SHORT_WORDS.has(hit) && tokens.length === 1) continue;
-      return { keyTokens: meaningful(tokens.slice(0, -take)), rule };
+      const nameTokens = tokens.slice(0, -take);
+      return { nameTokens, keyTokens: meaningful(nameTokens), rule };
     }
   }
-  return { keyTokens: meaningful(tokens), rule: null }; // no keyword: a base color at best
+  return { nameTokens: tokens, keyTokens: meaningful(tokens), rule: null }; // no keyword: a base color at best
 }
 
+/** Material -> names it can be matched by (its own name, the names of meshes using it). */
 function collectMaterials(root) {
-  const byMaterial = new Map(); // material -> Set of name tokens (material + mesh names)
+  const byMaterial = new Map();
   root.traverse((object) => {
     if (!object.isMesh) return;
     const materials = Array.isArray(object.material) ? object.material : [object.material];
     for (const material of materials) {
       if (!material) continue;
-      if (!byMaterial.has(material)) byMaterial.set(material, new Set(meaningful(tokenize(material.name || ''))));
-      const tokens = byMaterial.get(material);
-      for (const token of meaningful(tokenize(object.name || ''))) tokens.add(token);
+      if (!byMaterial.has(material)) byMaterial.set(material, { names: [tokenize(material.name || '')] });
+      if (object.name) byMaterial.get(material).names.push(tokenize(object.name));
     }
   });
   return byMaterial;
 }
 
-/** Best material for a file's key tokens: every key token must appear. */
-function matchMaterial(keyTokens, materials) {
-  if (keyTokens.length === 0) return { material: null, reason: 'no name to match' };
-  const scored = [...materials]
-    .map(([material, tokens]) => ({ material, hits: keyTokens.filter((token) => tokens.has(token)).length, size: tokens.size }))
-    .filter((entry) => entry.hits === keyTokens.length)
-    .sort((a, b) => a.size - b.size); // tightest name wins ("body" over "body_armor")
-  if (scored.length === 0) return { material: null, reason: 'no material with that name' };
-  if (scored.length > 1 && scored[0].size === scored[1].size) return { material: null, reason: 'several materials match' };
-  return { material: scored[0].material };
+/** Mesh names carry exporter suffixes ("Body_1_UI_0"): ignore a trailing primitive index. */
+const withoutPrimitiveIndex = (tokens) => (tokens.length > 1 && /^\d+$/.test(tokens[tokens.length - 1]) ? tokens.slice(0, -1) : tokens);
+
+/**
+ * Best material for a file name, in three stages (see the header):
+ * exact name, token subset with numbers, loose tokens without numbers.
+ */
+function matchMaterial({ nameTokens, keyTokens }, materials) {
+  const entries = [...materials];
+  if (nameTokens.length === 0 && keyTokens.length === 0) return { material: null, reason: 'no name to match' };
+
+  const unique = (candidates) => {
+    const distinct = [...new Set(candidates)];
+    return distinct.length === 1 ? distinct[0] : distinct.length > 1 ? 'ambiguous' : null;
+  };
+  const exactKey = nameTokens.join(' ');
+  const stages = [
+    // 1. Exact: "mat unagi body 1 ui" == material "MAT_Unagi_Body_1_UI".
+    () => entries.filter(([, { names }]) => names.some((n) => n.join(' ') === exactKey || withoutPrimitiveIndex(n).join(' ') === exactKey)),
+    // 2. Every file token (numbers included) appears in one name; tightest names win.
+    () => {
+      const hits = entries
+        .map(([material, { names }]) => ({ material, size: Math.min(...names.filter((n) => nameTokens.every((t) => n.includes(t))).map((n) => n.length)) }))
+        .filter((entry) => Number.isFinite(entry.size));
+      const tightest = Math.min(...hits.map((entry) => entry.size));
+      return hits.filter((entry) => entry.size === tightest).map((entry) => [entry.material]);
+    },
+    // 3. Loose: noise words and numbers ignored ("T_Body_D" -> "body").
+    () => {
+      if (keyTokens.length === 0) return [];
+      const hits = entries
+        .map(([material, { names }]) => ({ material, size: Math.min(...names.map(meaningful).filter((n) => keyTokens.every((t) => n.includes(t))).map((n) => n.length)) }))
+        .filter((entry) => Number.isFinite(entry.size));
+      const tightest = Math.min(...hits.map((entry) => entry.size));
+      return hits.filter((entry) => entry.size === tightest).map((entry) => [entry.material]);
+    },
+  ];
+  let ambiguous = false;
+  for (const stage of stages) {
+    const result = nameTokens.length ? unique(stage().map(([material]) => material)) : null;
+    if (result === 'ambiguous') {
+      ambiguous = true;
+      continue;
+    }
+    if (result) return { material: result };
+  }
+  return { material: null, reason: ambiguous ? 'several materials match' : 'no material with that name' };
 }
 
 function loadTexture(loader, url) {
@@ -136,19 +182,20 @@ export async function bindUnreferencedTextures({ root, unusedEntries, manager })
       unbound.push({ file: fileName, reason: `${extensionOf(fileName)} cannot be decoded by browsers — convert it to PNG/JPEG` });
       continue;
     }
-    const { keyTokens, rule } = classifyTextureName(fileName);
+    const classified = classifyTextureName(fileName);
+    const { rule } = classified;
     if (rule && rule.slots.length === 0) {
       unbound.push({ file: fileName, reason: 'this map type is not bound automatically' });
       continue;
     }
     const slots = rule ? rule.slots : ['map'];
-    let { material, reason } = matchMaterial(keyTokens, materials);
+    let { material, reason } = matchMaterial(classified, materials);
     if (!material && onlyMaterial) material = onlyMaterial; // single-material model
     if (!material) {
       unbound.push({ file: fileName, reason });
       continue;
     }
-    plans.push({ entry, fileName, material, slots, rule, specificity: keyTokens.length });
+    plans.push({ entry, fileName, material, slots, rule, specificity: classified.nameTokens.length });
   }
 
   // 2. One file per (material, slot); the model's own textures always win.
