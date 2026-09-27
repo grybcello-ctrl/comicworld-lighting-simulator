@@ -137,11 +137,12 @@ export function StudioLight({ light, isSelected, showFixture = true, showLightRa
         <LightStand position={pose.position} />
       </group>
 
-      {/* Invisible meshes still raycast in three.js, so drop the handler when hidden. */}
+      {/* Invisible meshes still raycast in three.js, so drop the handler when
+          hidden; no onSelect (camera mode) = not pickable. */}
       <group
         position={pose.position}
         quaternion={pose.quaternion}
-        onClick={showFixture ? handleClick : undefined}
+        onClick={showFixture && onSelect ? handleClick : undefined}
       >
         <group visible={showFixture}>
           {BodyRenderer && (

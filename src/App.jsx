@@ -1,5 +1,6 @@
 import { ControlPanel } from './components/panel/ControlPanel.jsx';
 import { StudioCanvas } from './components/scene/StudioCanvas.jsx';
+import { ViewfinderOverlay } from './components/viewport/ViewfinderOverlay.jsx';
 import { LightingProvider } from './state/LightingContext.jsx';
 
 export default function App() {
@@ -8,6 +9,7 @@ export default function App() {
       <div className="app-layout">
         <main className="app-layout__viewport">
           <StudioCanvas />
+          <ViewfinderOverlay />
         </main>
         <aside className="app-layout__panel">
           <ControlPanel />

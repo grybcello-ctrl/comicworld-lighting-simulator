@@ -2,8 +2,11 @@ import { OrbitControls } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
 import { useLayoutEffect } from 'react';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
+import { APP_MODES } from '../../config/cameraConfig.js';
 import { CAMERA_CONFIG, CAMERA_VIEWS, RENDER_CONFIG } from '../../config/sceneConfig.js';
+import { useAppMode } from '../../state/cameraStore.js';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
+import { CameraPostFX } from './CameraPostFX.jsx';
 import { StudioLight } from './StudioLight.jsx';
 import { SubjectModel } from './SubjectModel.jsx';
 
@@ -50,10 +53,18 @@ function CameraViewController() {
  *   editing one light only re-renders that light's map.
  * - Shadow map sizes follow each beam's footprint (utils/shadowModel.js)
  *   instead of a fixed 1024², so narrow beams use small maps.
+ *
+ * Modes (state/cameraStore.js):
+ * - Lighting: direct render through the orbit camera, helpers shown.
+ * - Camera: <CameraPostFX> takes over rendering (photo camera + DoF). Only
+ *   helpers change: light rays and the selection highlight are hidden, fixture
+ *   picking and OrbitControls are paused (kept mounted, so the orbit view is
+ *   restored untouched). Lights, subject and shadow maps are shared as-is.
  */
 export function StudioCanvas() {
   const { lights, selectedLightId, showFixtures, showLightRays } = useLightingState();
   const { selectLight } = useLightingActions();
+  const isCameraMode = useAppMode() === APP_MODES.CAMERA;
 
   return (
     <Canvas
@@ -73,15 +84,16 @@ export function StudioCanvas() {
         <StudioLight
           key={light.id}
           light={light}
-          isSelected={light.id === selectedLightId}
+          isSelected={!isCameraMode && light.id === selectedLightId}
           showFixture={showFixtures}
-          showLightRays={showLightRays}
-          onSelect={selectLight}
+          showLightRays={!isCameraMode && showLightRays}
+          onSelect={isCameraMode ? undefined : selectLight}
         />
       ))}
 
       <OrbitControls
         makeDefault
+        enabled={!isCameraMode}
         target={CAMERA_CONFIG.orbitTarget}
         enableDamping
         dampingFactor={0.08}
@@ -90,6 +102,7 @@ export function StudioCanvas() {
         maxPolarAngle={CAMERA_CONFIG.maxPolarAngle}
       />
       <CameraViewController />
+      {isCameraMode && <CameraPostFX />}
     </Canvas>
   );
 }

@@ -15,13 +15,20 @@ src/
 │  ├─ equipmentConfig.js    # Equipment catalog: STROBES, MODIFIERS, GRIDS, GELS, mounts
 │  ├─ equipmentRegistry.js  # Query helpers (lookup, mount compatibility, grouping)
 │  ├─ lightingPresets.js    # Preset lighting setups (built from catalog ids)
+│  ├─ cameraConfig.js       # Camera mode: GFX bodies, GF lenses, f-stops, DoF settings
 │  └─ sceneConfig.js        # Camera, render calibration, slider limits
 ├─ state/
 │  ├─ LightingContext.jsx     # Light instances (useReducer + context)
 │  ├─ lightSelectors.js       # Shared derived data (pose, rig, color) for scene + panel
 │  ├─ setupSerializer.js      # JSON export / import
-│  └─ subjectStore.js         # Subject type + custom model lifecycle
+│  ├─ subjectStore.js         # Subject type + custom model lifecycle
+│  ├─ cameraStore.js          # appMode ('lighting' | 'camera') + photo-camera settings
+│  └─ cameraSelectors.js      # Derived optics (AoV, DoF, blur) for panel + viewfinder
+├─ postprocessing/
+│  └─ PhysicalBokehPass.js    # Thin-lens depth of field (CoC from f, N, focus distance)
 ├─ utils/
+│  ├─ cameraOptics.js         # Thin-lens math: FOV fit, focus geometry, CoC, DoF
+│  ├─ toneMappingInverse.js   # Keeps the backdrop color identical in camera mode
 │  ├─ lightMath.js            # Placement, Connect-style power scale (f-stop law)
 │  ├─ beamModel.js            # Strobe + modifier + grid → three.js light rig
 │  ├─ beamProfileTexture.js   # Angular beam profiles as SpotLight maps
@@ -45,8 +52,10 @@ src/
 │  └─ skinMaterial.js         # PBR skin materials for the mannequin
 └─ components/
    ├─ scene/                  # Canvas, mannequin, StudioLight, fixture renderers
+   │  ├─ CameraPostFX.jsx     # Camera mode renderer: photo camera + EffectComposer
    │  └─ fixtures/index.js    # shape key → 3D renderer registry
-   └─ panel/                  # Control panel UI
+   ├─ viewport/               # Viewfinder overlay (frame lines, info strip)
+   └─ panel/                  # Control panel UI (ModeTabs, CameraPanel, …)
 ```
 
 ## Adding equipment
@@ -191,3 +200,28 @@ three.js dropped `KHR_materials_pbrSpecularGlossiness` in r147. Materials that s
   - `metalness` = 0
 - **Loading:** the textures load through the parser, so they go through the same `LoadingManager` and URL modifier as every other file.
 - **Name matching:** the name-based binder now matches in three steps. It tries the exact name first (numbers included, so `Body_1` and `Body_2` stay distinct), then tokens with numbers, then tokens without numbers.
+
+
+## Camera mode
+
+The tabs at the top of the panel switch `appMode` (`state/cameraStore.js`) between **Lighting Mode** (direct render, orbit camera, light rays and selection highlight) and **Camera Mode** (a photo camera with depth of field).
+
+- **Bodies:** FUJIFILM GFX100S and GFX100S II, both with a 43.8 × 32.9 mm sensor.
+- **Lenses:** GF55mmF1.7, GF55mm F3.5, GF80mmF1.7 and GF110mmF2.
+  - The GF55mm F3.5 is not a Fujifilm catalogue lens. It is modeled as requested; the closest real lens is the GF50mmF3.5 R LM WR, whose 0.35 m close focus is used.
+- **Angle of view:** the 4:3 sensor frame is the largest centered rectangle that fits the canvas. `camera.fov` is chosen so that frame spans exactly the lens's angle of view, and `filmGauge` is set so `getFocalLength()` returns the lens focal length.
+  - The diagonals come out at 52.9° / 37.8° / 28.0°, matching Fujifilm's specs.
+  - The overlay masks everything outside the frame.
+- **F-Stop:** the slider runs in 1/3 stops from the lens's maximum aperture to f/16. Changing lens snaps the f-number to the nearest stop that lens offers.
+- **Focus Distance:** measured from the focal plane, from the lens's minimum focus distance to 30 m, on a log scale.
+  - **AF · Face** (the default) keeps the face in focus while you move the camera. The face surface is found once per subject with a ray from the front.
+  - Moving the focus slider switches to MF.
+- **Shooting Distance:** sets `camera.position.z`, dollying the camera along z. Camera and aim height sliders tilt the view.
+- **Depth of field** (`postprocessing/PhysicalBokehPass.js`): uses the thin-lens circle of confusion `c = f²/(N(u₁ − f)) · (1 − u₁/u₂)`, computed per pixel from the depth buffer of the real render. Blur therefore grows as the f-number drops.
+  - A blurred foreground spreads over what lies behind it. A blurred background never spreads over a sharp subject.
+  - three's `BokehPass` is not used: its blur is linear in depth, its aperture is not an f-number, and its separate depth pass ignores alpha-cutout hair.
+- **Readouts:** DoF near/far limits and hyperfocal distance (circle of confusion 0.038 mm, the 35 mm standard of 0.030 mm scaled to the sensor), 35 mm equivalents, and blur at infinity.
+- **Isolation:** mode and camera state live outside the lighting reducer and the subject store, so switching modes never recomputes or resets lights, the loaded model, parabolic calculations or shadow maps.
+  - OrbitControls stays mounted but is paused, so the lighting view comes back pixel-identical.
+  - Post-processing resources exist only while camera mode is active.
+- **Exposure** does not follow the f-number: camera mode keeps the brightness of the lighting setup.
