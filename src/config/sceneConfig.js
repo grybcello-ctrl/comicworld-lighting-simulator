@@ -1,12 +1,13 @@
 /** Scene-level constants (units: meters, degrees). */
 
-/** World-space point every light aims at (center of the bust's head). */
-export const SUBJECT_TARGET = Object.freeze([0, 1.46, 0]);
+/** World-space point every light aims at (center of the mannequin's head). */
+export const SUBJECT_TARGET = Object.freeze([0, 1.62, 0]);
 
 export const CAMERA_CONFIG = Object.freeze({
-  position: [0, 1.55, 3.4],
+  // Frames the full 1.75 m mannequin with some headroom for the fixtures.
+  position: [0, 1.15, 5.2],
   fov: 35,
-  orbitTarget: [0, 1.35, 0],
+  orbitTarget: [0, 0.95, 0],
   minDistance: 0.6,
   maxDistance: 15,
   // Allow slightly below the horizon, but never under the floor.

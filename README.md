@@ -12,7 +12,7 @@ npm run dev
 ```
 src/
 ├─ config/
-│  ├─ equipmentConfig.js    # Equipment catalog: STROBES, MODIFIERS, mounts, categories
+│  ├─ equipmentConfig.js    # Equipment catalog: STROBES, MODIFIERS, GRIDS, GELS, mounts
 │  ├─ equipmentRegistry.js  # Query helpers (lookup, mount compatibility, grouping)
 │  ├─ lightingPresets.js    # Preset lighting setups (built from catalog ids)
 │  └─ sceneConfig.js        # Camera, render calibration, slider limits
@@ -20,9 +20,12 @@ src/
 ├─ utils/
 │  ├─ lightMath.js            # Placement, Connect-style power scale (f-stop law)
 │  ├─ beamModel.js            # Strobe + modifier + grid → three.js light rig
-│  └─ beamProfileTexture.js   # Angular beam profiles as SpotLight maps
+│  ├─ beamProfileTexture.js   # Angular beam profiles as SpotLight maps
+│  ├─ spectral.js             # Planck's law, CIE 1931 CMFs, XYZ → linear sRGB
+│  ├─ gelFilters.js           # Gel transmission curves T(λ)
+│  └─ colorTemperature.js     # Kelvin × gel → three.js light color
 └─ components/
-   ├─ scene/                  # Canvas, bust, StudioLight, fixture renderers
+   ├─ scene/                  # Canvas, mannequin, StudioLight, fixture renderers
    │  └─ fixtures/index.js    # shape key → 3D renderer registry
    └─ panel/                  # Control panel UI
 ```
@@ -49,3 +52,11 @@ Light instances only store `strobeId` / `modifierId`, and the specs are always r
 - **Power:** `outputWs = maxWs × 2^(level − 10)`. The level runs from 1.0 to 10.0 in 0.1 steps, like the Profoto Connect Pro.
 - **Distance decay:** a virtual source sits `d0` behind the fixture. `decay = 2d / (d + d0)`, so `d0 = 0` gives exact inverse-square falloff (hard lights).
 - **Grids:** the beam angle is forced to the grid rating (10° / 20°), with a penumbra of about 0.03 and a hard edge cut.
+
+## Color (Phase 3)
+
+- **Kelvin → RGB:** the strobe is treated as a black body (Planck's law) and integrated against the CIE 1931 2° color-matching functions, then converted from XYZ to linear sRGB (the working space three.js uses). Luminance is normalized to 1, so changing the color temperature does not change exposure. The white point is D65, so about 6500K looks neutral on screen.
+- **Gels:** the black-body spectrum is multiplied by the gel transmission `T(λ)` wavelength by wavelength, before converting to color. The gel's light loss (its photopic transmission) is built into the color's luminance.
+  - CTO gels use a mired-shift curve, so 5600K + Full CTO gives about 2960K and 5600K + ½ CTO gives about 3850K.
+  - Effect gels use band-pass curves.
+- **Fixture toggle:** hides the stand, body and modifier meshes. Lights sit outside the hidden groups, so they keep illuminating the subject.

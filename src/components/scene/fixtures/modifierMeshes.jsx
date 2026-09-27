@@ -6,7 +6,8 @@ import { FOCUS_ROD_LIMITS } from '../../../config/sceneConfig.js';
  * Modifier renderers. Same convention as strobe bodies: the mount is at the
  * local origin and the modifier opens towards +Z (the subject).
  * `isLit` switches emitting surfaces between glowing and idle.
- * Optional props: `grid` (GridDefinition | null), `focusRod` (0..100).
+ * Optional props: `emitColor` (glow color of lit surfaces, i.e. Kelvin × gel),
+ * `grid` (GridDefinition | null), `focusRod` (0..100).
  */
 
 const HALF_PI = Math.PI / 2;
@@ -44,7 +45,7 @@ function GridMesh({ grid, radius, frontZ }) {
 }
 
 /** Open cone reflector with a bright bulb inside (and an optional grid). */
-export function ReflectorMesh({ geometry, isLit, grid }) {
+export function ReflectorMesh({ geometry, isLit, emitColor, grid }) {
   const { diameter, depth, color } = geometry;
   return (
     <group>
@@ -54,7 +55,7 @@ export function ReflectorMesh({ geometry, isLit, grid }) {
       </mesh>
       <mesh position={[0, 0, 0.03]}>
         <sphereGeometry args={[0.025, 16, 16]} />
-        <EmitterMaterial isLit={isLit} />
+        <EmitterMaterial isLit={isLit} color={emitColor} />
       </mesh>
       {grid && <GridMesh grid={grid} radius={diameter / 2} frontZ={depth} />}
     </group>
@@ -66,7 +67,7 @@ export function ReflectorMesh({ geometry, isLit, grid }) {
  * focusing rod on the axis. The flash head slides from the focal point
  * (rod = 0, focused) back towards the apex (rod = 100, flooded).
  */
-export function ParabolicMesh({ geometry, isLit, focusRod = FOCUS_ROD_LIMITS.default }) {
+export function ParabolicMesh({ geometry, isLit, emitColor, focusRod = FOCUS_ROD_LIMITS.default }) {
   const { diameter, depth, segments = 24, color } = geometry;
   const radius = diameter / 2;
   const focalLength = radius ** 2 / (4 * depth);
@@ -103,14 +104,14 @@ export function ParabolicMesh({ geometry, isLit, focusRod = FOCUS_ROD_LIMITS.def
       {/* Flash head on the rod */}
       <mesh position={[0, 0, headZ]}>
         <sphereGeometry args={[0.035, 16, 16]} />
-        <EmitterMaterial isLit={isLit} />
+        <EmitterMaterial isLit={isLit} color={emitColor} />
       </mesh>
     </group>
   );
 }
 
 /** Rectangular softbox / stripbox: square frustum scaled to width x height. */
-export function RectSoftboxMesh({ geometry, isLit }) {
+export function RectSoftboxMesh({ geometry, isLit, emitColor }) {
   const { width, height, depth, color } = geometry;
   // A 4-sided cylinder with radius 1/sqrt(2) has unit-length sides.
   const unitRadius = Math.SQRT1_2;
@@ -127,14 +128,14 @@ export function RectSoftboxMesh({ geometry, isLit }) {
       {/* Front diffuser */}
       <mesh position={[0, 0, depth]}>
         <planeGeometry args={[width, height]} />
-        <EmitterMaterial isLit={isLit} />
+        <EmitterMaterial isLit={isLit} color={emitColor} />
       </mesh>
     </group>
   );
 }
 
 /** Octagonal softbox. */
-export function OctaSoftboxMesh({ geometry, isLit }) {
+export function OctaSoftboxMesh({ geometry, isLit, emitColor }) {
   const { diameter, depth, color } = geometry;
   const radius = diameter / 2;
   return (
@@ -145,14 +146,14 @@ export function OctaSoftboxMesh({ geometry, isLit }) {
       </mesh>
       <mesh position={[0, 0, depth]} rotation={[0, 0, Math.PI / 2]}>
         <circleGeometry args={[radius, 8]} />
-        <EmitterMaterial isLit={isLit} />
+        <EmitterMaterial isLit={isLit} color={emitColor} />
       </mesh>
     </group>
   );
 }
 
 /** Umbrella canopy (spherical cap) with a shaft. */
-export function UmbrellaMesh({ geometry, isLit }) {
+export function UmbrellaMesh({ geometry, isLit, emitColor }) {
   const { diameter, depth, color } = geometry;
   const radius = diameter / 2;
   // Sphere radius / cap angle that produce the requested diameter and depth.
@@ -164,7 +165,7 @@ export function UmbrellaMesh({ geometry, isLit }) {
       {/* Canopy: a cap around +Y, rotated so +Y maps to -Z (concave side faces +Z). */}
       <mesh position={[0, 0, apexZ + sphereRadius]} rotation={[-HALF_PI, 0, 0]}>
         <sphereGeometry args={[sphereRadius, 32, 8, 0, Math.PI * 2, 0, capAngle]} />
-        <EmitterMaterial isLit={isLit} color={color} />
+        <EmitterMaterial isLit={isLit} color={emitColor} />
       </mesh>
       {/* Shaft */}
       <mesh position={[0, 0, 0.1]} rotation={[HALF_PI, 0, 0]}>
@@ -176,7 +177,7 @@ export function UmbrellaMesh({ geometry, isLit }) {
 }
 
 /** Shallow dish with a center deflector plate. */
-export function BeautyDishMesh({ geometry, isLit }) {
+export function BeautyDishMesh({ geometry, isLit, emitColor }) {
   const { diameter, depth, color } = geometry;
   return (
     <group>
@@ -187,7 +188,7 @@ export function BeautyDishMesh({ geometry, isLit }) {
       {/* Inner surface glow */}
       <mesh position={[0, 0, depth * 0.35]}>
         <circleGeometry args={[diameter * 0.3, 32]} />
-        <EmitterMaterial isLit={isLit} />
+        <EmitterMaterial isLit={isLit} color={emitColor} />
       </mesh>
       {/* Deflector plate */}
       <mesh position={[0, 0, depth * 0.6]} rotation={[HALF_PI, 0, 0]}>
@@ -199,11 +200,11 @@ export function BeautyDishMesh({ geometry, isLit }) {
 }
 
 /** No modifier: just an exposed flash tube. */
-export function BareBulbMesh({ isLit }) {
+export function BareBulbMesh({ isLit, emitColor }) {
   return (
     <mesh position={[0, 0, 0.03]}>
       <sphereGeometry args={[0.03, 16, 16]} />
-      <EmitterMaterial isLit={isLit} />
+      <EmitterMaterial isLit={isLit} color={emitColor} />
     </mesh>
   );
 }
