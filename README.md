@@ -31,7 +31,10 @@ src/
 │  ├─ shadowModel.js          # Apparent-size shadows → shadow.radius / map size
 │  ├─ beamProfile.js          # Beam profile, flattening, energy (effective solid angle)
 │  ├─ parabolicReflector.js   # Focusing-rod head travel, dish irradiance (glow)
-│  ├─ modelLoader.js          # Local glTF/GLB loading (blob URLs, Draco, Meshopt)
+│  ├─ modelLoader.js          # Local glTF/GLB loading (Draco, Meshopt)
+│  ├─ modelFileSet.js         # Multi-file .gltf: main file + Blob URL map + URL modifier
+│  ├─ blobUrlRegistry.js      # Tracks and revokes a model's Blob URLs
+│  ├─ textureColorSpace.js    # Ensures color textures are SRGBColorSpace
 │  ├─ modelPreparation.js     # Shadows, unlit → PBR, Box3 auto-fit
 │  ├─ disposeObject3D.js      # Frees geometries, materials, textures, bitmaps
 │  ├─ skinTexture.js          # Procedural skin normal + roughness maps
@@ -127,6 +130,20 @@ Light instances only store `strobeId` / `modifierId`, and the specs are always r
   - Lights and cameras embedded in the file are removed.
 - **Auto-fit:** `Box3.setFromObject(model, true)` measures the model. The scale is `1.725 / height`, and an offset of `(−center.x, −min.y, −center.z)` is applied. Result: feet at y = 0, centered on x = 0 / z = 0, same height as the mannequin.
 - **Clean-up:** switching back to the mannequin, or replacing the model, disposes all geometries, materials and textures, and closes decoded ImageBitmaps.
-  - Object URLs are revoked as soon as each load settles.
   - A load that is superseded before it finishes is disposed when it arrives.
   - Shadow maps are refreshed whenever the subject changes.
+
+### Multi-file .gltf (external .bin and textures)
+
+- **Select everything at once:** the file input allows multiple files. Pick the `.gltf` together with its `.bin` and texture files (Ctrl/⌘ or Shift + click).
+- **Mapping:** exactly one `.gltf` / `.glb` is the main file. Every other file becomes a Blob URL (`URL.createObjectURL`) in a map keyed by file name.
+  - A `THREE.LoadingManager` URL modifier redirects each `.bin` or texture request from `GLTFLoader` to the matching Blob URL.
+  - Names match case-insensitively, after handling `%20`, subfolders (`textures/…`), `./` and `../`, backslashes, query strings and absolute exporter paths.
+  - If several selected files share a name, the relative path decides.
+- **Report:** the panel shows how many files were mapped. It also lists referenced files that were not selected (textures load blank, a missing `.bin` is an error) and selected files the model never used.
+- **Color space:** after loading, every color texture (`map`, `emissiveMap`, `sheenColorMap`, `specularColorMap`) is checked and set to `THREE.SRGBColorSpace`, so textures don't look washed out.
+  - Data maps (normal, roughness, metalness, AO, …) stay linear.
+  - PBR parameters and shadow flags are not touched.
+- **Blob URL clean-up:** all Blob URLs of a model (main file, `.bin`, textures) are tracked in one registry that the model owns.
+  - They are revoked together with `dispose()` when the model is replaced or removed.
+  - A failed or cancelled load revokes its URLs immediately and disposes any textures it had already decoded.

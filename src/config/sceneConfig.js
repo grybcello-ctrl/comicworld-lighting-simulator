@@ -152,8 +152,9 @@ export const SUBJECT_CONFIG = Object.freeze({
   mannequinHeightM: 1.725,
   // Custom models are scaled so their bounding-box height equals this.
   targetHeightM: 1.725,
-  // Selectable in the file input; exactly one model file per upload.
+  // The main file of an upload; exactly one per selection.
   modelExtensions: ['.glb', '.gltf'],
-  // Extra files a .gltf may reference (external buffers / textures).
-  companionExtensions: ['.bin', '.png', '.jpg', '.jpeg', '.webp', '.ktx2'],
+  // File-picker filter hint for resources a .gltf may reference. Every other
+  // selected file is mapped too, whatever its extension (modelFileSet.js).
+  resourceExtensionHints: ['.bin', '.png', '.jpg', '.jpeg', '.webp', '.avif', '.ktx2'],
 });

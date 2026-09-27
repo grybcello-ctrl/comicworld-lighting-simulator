@@ -22,6 +22,7 @@ function describeReleased(released) {
     `${released.textures} textures`,
   ];
   if (released.imageBitmaps) parts.push(`${released.imageBitmaps} image bitmaps`);
+  parts.push(`${released.blobUrls ?? 0} blob URLs revoked`);
   return `Previous custom model disposed: ${parts.join(', ')}.`;
 }
 
@@ -37,14 +38,30 @@ function ModelReadout({ info }) {
   if (compression.length) notes.push(`decoded ${compression.join(', ')}`);
   if (info.animationCount) notes.push(`${info.animationCount} animation(s) not played (static pose)`);
   if (info.missingFiles.length) notes.push(`missing: ${info.missingFiles.join(', ')}`);
-  if (info.ignoredFiles.length) notes.push(`ignored: ${info.ignoredFiles.join(', ')}`);
+  if (info.unusedFiles.length) notes.push(`not referenced by the model: ${info.unusedFiles.join(', ')}`);
+  if (info.ambiguousFiles.length) notes.push(`ambiguous names: ${info.ambiguousFiles.join(', ')}`);
+  const { colorTextures, alreadySrgb, corrected, conflicts } = info.colorSpaces;
 
   const items = [
     {
       label: 'File',
       value: `${info.fileName} · ${formatBytes(info.totalBytes)}${
-        info.companionCount ? ` (+${info.companionCount} file(s))` : ''
+        info.resourceCount ? ` (+${info.resourceCount} file(s))` : ''
       }`,
+    },
+    {
+      label: 'External files mapped',
+      value: info.resourceCount
+        ? `${info.mappedCount} / ${info.resourceCount} → blob URLs (${info.blobUrlCount} tracked)`
+        : `none (self-contained) · ${info.blobUrlCount} blob URL tracked`,
+    },
+    {
+      label: 'Color textures (sRGB)',
+      value: colorTextures
+        ? `${alreadySrgb + corrected} / ${colorTextures}${corrected ? ` · ${corrected} corrected` : ''}${
+            conflicts ? ` · ${conflicts} shared with data maps (left linear)` : ''
+          }`
+        : 'none',
     },
     { label: 'Original size (model units)', value: formatVector(info.originalSize, 3) },
     { label: 'Auto scale', value: `× ${info.scale.toPrecision(4)} → ${info.fittedSize[1].toFixed(3)} m tall` },
@@ -116,8 +133,9 @@ export function SubjectSelector() {
             data-testid="custom-model-input"
           />
           <span className="field__hint">
-            Loaded locally in your browser — nothing is uploaded. For a .gltf with separate .bin / texture
-            files, select them all at once. Auto-fitted to {SUBJECT_CONFIG.targetHeightM} m, feet on the floor.
+            Loaded locally in your browser — nothing is uploaded. For a .gltf with separate files, select
+            the .gltf together with its .bin and all texture files (Ctrl/⌘ or Shift + click). Auto-fitted to{' '}
+            {SUBJECT_CONFIG.targetHeightM} m, feet on the floor.
           </span>
 
           {model.loadingFileName && (
