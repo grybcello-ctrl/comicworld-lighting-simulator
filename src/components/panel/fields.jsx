@@ -84,3 +84,8 @@ export function ReadoutList({ items }) {
     </dl>
   );
 }
+
+/** Small color chip for previews. */
+export function ColorSwatch({ color }) {
+  return <span className="color-swatch" style={{ background: color }} aria-hidden="true" />;
+}

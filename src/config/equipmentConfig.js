@@ -1,7 +1,7 @@
 /**
  * Equipment catalog — the single source of truth for all lighting gear.
  *
- * To add new equipment, append an entry to STROBES, MODIFIERS or GRIDS.
+ * To add new equipment, append an entry to STROBES, MODIFIERS, GRIDS or GELS.
  * No component code needs to change as long as the entry uses an existing
  * `body.shape` (strobes), `geometry.shape` (modifiers) and `lighting.model`.
  * A brand-new visual shape only requires registering one renderer in
@@ -63,6 +63,9 @@ const STUDIO_MOUNTS = [MOUNT_TYPES.BOWENS, MOUNT_TYPES.PROFOTO, MOUNT_TYPES.ELIN
  */
 const PROFOTO_POWER_SCALE = Object.freeze({ min: 1.0, max: 10.0, step: 0.1 });
 
+/** Color temperature slider range shared by all strobes (tungsten .. D65). */
+export const STUDIO_COLOR_TEMP_RANGE = Object.freeze({ minK: 3200, maxK: 6500, stepK: 50 });
+
 /**
  * @typedef {Object} StrobeDefinition
  * @property {string} id                 Unique, stable identifier.
@@ -74,7 +77,7 @@ const PROFOTO_POWER_SCALE = Object.freeze({ min: 1.0, max: 10.0, step: 0.1 });
  * @property {{ min: number, max: number, step: number }} powerLevelRange
  *           Connect-style power levels. Energy = maxWs * 2^(level - 10).
  * @property {number} colorTempK         Native color temperature in Kelvin.
- * @property {{ minK: number, maxK: number }} colorTempRange
+ * @property {{ minK: number, maxK: number, stepK: number }} colorTempRange
  * @property {{ shape: string, color: string, [key: string]: any }} body
  */
 
@@ -90,7 +93,7 @@ export const STROBES = [
     maxWs: 250, // 10 f-stops, 0.5–250 Ws
     powerLevelRange: PROFOTO_POWER_SCALE,
     colorTempK: 5600,
-    colorTempRange: { minK: 5000, maxK: 6000 },
+    colorTempRange: STUDIO_COLOR_TEMP_RANGE,
     body: { shape: 'cylinder', length: 0.175, radius: 0.05, color: '#1c1c1c' },
   },
   {
@@ -102,7 +105,7 @@ export const STROBES = [
     maxWs: 500, // 10 f-stops, 1–500 Ws
     powerLevelRange: PROFOTO_POWER_SCALE,
     colorTempK: 5600,
-    colorTempRange: { minK: 5000, maxK: 6000 },
+    colorTempRange: STUDIO_COLOR_TEMP_RANGE,
     body: { shape: 'cylinder', length: 0.215, radius: 0.05, color: '#1c1c1c' },
   },
   {
@@ -116,7 +119,7 @@ export const STROBES = [
     maxWs: 500,
     powerLevelRange: PROFOTO_POWER_SCALE,
     colorTempK: 5600,
-    colorTempRange: { minK: 5000, maxK: 6000 },
+    colorTempRange: STUDIO_COLOR_TEMP_RANGE,
     body: { shape: 'cylinder', length: 0.215, radius: 0.052, color: '#101010' },
   },
 
@@ -129,7 +132,7 @@ export const STROBES = [
     maxWs: 400,
     powerLevelRange: { ...PROFOTO_POWER_SCALE, min: 3.0 },
     colorTempK: 5600,
-    colorTempRange: { minK: 5000, maxK: 6000 },
+    colorTempRange: STUDIO_COLOR_TEMP_RANGE,
     body: { shape: 'cylinder', length: 0.28, radius: 0.065, color: '#2b2b2b' },
   },
   {
@@ -140,7 +143,7 @@ export const STROBES = [
     maxWs: 600,
     powerLevelRange: { ...PROFOTO_POWER_SCALE, min: 2.0 },
     colorTempK: 5600,
-    colorTempRange: { minK: 5000, maxK: 6000 },
+    colorTempRange: STUDIO_COLOR_TEMP_RANGE,
     body: { shape: 'cylinder', length: 0.32, radius: 0.075, color: '#1f1f1f' },
   },
   {
@@ -151,7 +154,7 @@ export const STROBES = [
     maxWs: 1200,
     powerLevelRange: PROFOTO_POWER_SCALE,
     colorTempK: 5500,
-    colorTempRange: { minK: 5000, maxK: 6000 },
+    colorTempRange: STUDIO_COLOR_TEMP_RANGE,
     body: { shape: 'cylinder', length: 0.22, radius: 0.06, color: '#3a3a3a' },
   },
   {
@@ -162,7 +165,7 @@ export const STROBES = [
     maxWs: 76,
     powerLevelRange: { ...PROFOTO_POWER_SCALE, min: 3.0 },
     colorTempK: 5600,
-    colorTempRange: { minK: 5200, maxK: 6000 },
+    colorTempRange: STUDIO_COLOR_TEMP_RANGE,
     body: { shape: 'box', width: 0.075, height: 0.14, depth: 0.1, color: '#151515' },
   },
 ];
@@ -478,13 +481,101 @@ export const GRIDS = [
   },
 ];
 
+/** Gel categories (used for grouping in the UI). */
+export const GEL_CATEGORIES = Object.freeze({
+  colorCorrection: { label: 'OCF Color Correction' },
+  colorEffects: { label: 'OCF Color Effects' },
+});
+
+/**
+ * Profoto OCF color gels (snap onto the B10-series head, so they work under
+ * any modifier). The light color is computed spectrally:
+ * black body(T) × gel T(λ) -> CIE XYZ -> linear sRGB (see utils/colorTemperature.js).
+ *
+ * filter.type 'mired':    color conversion; `miredShift` is the spectral shape
+ *   parameter, calibrated so 5600K + gel lands on the nominal rating
+ *   (`nominalMiredShift`) along the Planckian locus.
+ * filter.type 'bandpass': effect colors; logistic cut-on/cut-off edges (nm).
+ * Curves are approx. fits to typical Rosco/LEE equivalents (dominant hue and
+ * photopic transmission), not manufacturer-measured spectra.
+ * @typedef {Object} GelDefinition
+ * @property {string} id
+ * @property {string} name
+ * @property {keyof GEL_CATEGORIES} category
+ * @property {string[]} mounts            Strobe mounts the gel physically fits.
+ * @property {number} [nominalMiredShift] Published mired shift (conversion gels).
+ * @property {{ type: 'mired' | 'bandpass', [key: string]: number }} filter
+ */
+
+/** @type {GelDefinition[]} */
+export const GELS = [
+  {
+    id: 'ocf-gel-cto-full',
+    name: 'Full CTO',
+    category: 'colorCorrection',
+    mounts: [MOUNT_TYPES.PROFOTO_OCF],
+    nominalMiredShift: 159, // 5600K -> ~2960K, ~56% transmission (−0.8 EV)
+    filter: { type: 'mired', miredShift: 172.5, peak: 0.86 },
+  },
+  {
+    id: 'ocf-gel-cto-half',
+    name: '1/2 CTO',
+    category: 'colorCorrection',
+    mounts: [MOUNT_TYPES.PROFOTO_OCF],
+    nominalMiredShift: 81, // 5600K -> ~3850K, ~71% transmission (−0.5 EV)
+    filter: { type: 'mired', miredShift: 85.5, peak: 0.88 },
+  },
+  {
+    id: 'ocf-gel-scarlet',
+    name: 'Scarlet',
+    category: 'colorEffects',
+    mounts: [MOUNT_TYPES.PROFOTO_OCF],
+    // Long-pass red with an orange bias; blocks everything below ~590 nm.
+    filter: { type: 'bandpass', cutOnNm: 596, cutOnWidthNm: 9, peak: 0.85, floor: 0.004 },
+  },
+  {
+    id: 'ocf-gel-peacock-blue',
+    name: 'Peacock Blue',
+    category: 'colorEffects',
+    mounts: [MOUNT_TYPES.PROFOTO_OCF],
+    // Turquoise: passes blue-cyan (~430–545 nm), blocks red.
+    filter: {
+      type: 'bandpass',
+      cutOnNm: 428,
+      cutOnWidthNm: 12,
+      cutOffNm: 545,
+      cutOffWidthNm: 14,
+      peak: 0.66,
+      floor: 0.02,
+    },
+  },
+  {
+    id: 'ocf-gel-jade',
+    name: 'Jade',
+    category: 'colorEffects',
+    mounts: [MOUNT_TYPES.PROFOTO_OCF],
+    // Blue-green: narrow pass band ~470–550 nm.
+    filter: {
+      type: 'bandpass',
+      cutOnNm: 470,
+      cutOnWidthNm: 10,
+      cutOffNm: 550,
+      cutOffWidthNm: 12,
+      peak: 0.42,
+      floor: 0.015,
+    },
+  },
+];
+
 /** Aggregated export, convenient for passing the whole catalog around. */
 export const equipmentConfig = Object.freeze({
   strobes: STROBES,
   modifiers: MODIFIERS,
   grids: GRIDS,
+  gels: GELS,
   mountTypes: MOUNT_TYPES,
   lightModels: LIGHT_MODELS,
   strobeCategories: STROBE_CATEGORIES,
   modifierCategories: MODIFIER_CATEGORIES,
+  gelCategories: GEL_CATEGORIES,
 });

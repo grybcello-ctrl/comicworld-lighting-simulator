@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { CAMERA_CONFIG, RENDER_CONFIG } from '../../config/sceneConfig.js';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
-import { BustSubject } from './BustSubject.jsx';
+import { MannequinSubject } from './MannequinSubject.jsx';
 import { StudioLight } from './StudioLight.jsx';
 
 // RectAreaLight (softboxes) needs its LTC lookup textures registered once.
@@ -21,7 +21,7 @@ function StudioFloor() {
 }
 
 export function StudioCanvas() {
-  const { lights, selectedLightId } = useLightingState();
+  const { lights, selectedLightId, showFixtures } = useLightingState();
   const { selectLight } = useLightingActions();
 
   return (
@@ -34,13 +34,14 @@ export function StudioCanvas() {
       <ambientLight intensity={RENDER_CONFIG.ambientIntensity} />
 
       <StudioFloor />
-      <BustSubject />
+      <MannequinSubject />
 
       {lights.map((light) => (
         <StudioLight
           key={light.id}
           light={light}
           isSelected={light.id === selectedLightId}
+          showFixture={showFixtures}
           onSelect={selectLight}
         />
       ))}

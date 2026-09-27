@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, useReducer } from 'react';
 import {
   getCompatibleModifiers,
   getStrobeById,
+  isGelCompatible,
   isGridCompatible,
   isModifierCompatible,
 } from '../config/equipmentRegistry.js';
@@ -18,10 +19,11 @@ import { clamp, snapPowerLevel } from '../utils/lightMath.js';
  * @property {string} strobeId
  * @property {string} modifierId
  * @property {string | null} gridId  Grid fitted to the modifier, if any.
+ * @property {string | null} gelId   Color gel on the strobe head, if any.
  * @property {boolean} enabled
  * @property {number} powerLevel     Connect-style scale: 10.0 = full, -1.0 = -1 stop.
  * @property {number} focusRod       Parabolic focusing rod, 0 = spot .. 100 = flood.
- * @property {number} colorTempK
+ * @property {number} colorTempK     Source color temperature (3200K–6500K).
  * @property {{ azimuthDeg: number, elevationDeg: number, distance: number }} placement
  */
 
@@ -33,7 +35,7 @@ const DEFAULT_POWER_LEVEL = 7;
 
 /**
  * Enforces catalog invariants: modifier fits the strobe, grid fits the
- * modifier, power level and focus rod are within range.
+ * modifier, gel fits the strobe, and all numeric values are within range.
  */
 function normalizeLight(light) {
   const strobe = getStrobeById(light.strobeId);
@@ -45,6 +47,8 @@ function normalizeLight(light) {
     ...light,
     modifierId,
     gridId: light.gridId && isGridCompatible(modifierId, light.gridId) ? light.gridId : null,
+    gelId: light.gelId && isGelCompatible(light.strobeId, light.gelId) ? light.gelId : null,
+    colorTempK: clamp(light.colorTempK, strobe.colorTempRange.minK, strobe.colorTempRange.maxK),
     powerLevel: snapPowerLevel(light.powerLevel, strobe.powerLevelRange),
     focusRod: clamp(Math.round(light.focusRod), FOCUS_ROD_LIMITS.min, FOCUS_ROD_LIMITS.max),
   };
@@ -55,6 +59,8 @@ export function createLightInstance({
   strobeId,
   modifierId,
   gridId = null,
+  gelId = null,
+  colorTempK,
   label,
   powerLevel = DEFAULT_POWER_LEVEL,
   focusRod = FOCUS_ROD_LIMITS.default,
@@ -69,10 +75,11 @@ export function createLightInstance({
     strobeId,
     modifierId,
     gridId,
+    gelId,
     enabled: true,
     powerLevel,
     focusRod,
-    colorTempK: strobe.colorTempK,
+    colorTempK: colorTempK ?? strobe.colorTempK,
     placement: { ...DEFAULT_PLACEMENT, ...placement },
   });
 }
@@ -82,7 +89,12 @@ const buildLightsFromPreset = (presetId) =>
 
 function createInitialState() {
   const lights = buildLightsFromPreset(DEFAULT_PRESET_ID);
-  return { lights, selectedLightId: lights[0]?.id ?? null };
+  return {
+    lights,
+    selectedLightId: lights[0]?.id ?? null,
+    // View options; fixtures hidden = meshes invisible, light still emitted.
+    showFixtures: true,
+  };
 }
 
 /** Swapping strobes resets color temperature to the new unit's native value. */
@@ -96,6 +108,7 @@ function lightingReducer(state, action) {
   switch (action.type) {
     case 'light/add':
       return {
+        ...state,
         lights: [...state.lights, action.light],
         selectedLightId: action.light.id,
       };
@@ -126,14 +139,17 @@ function lightingReducer(state, action) {
       const lights = state.lights.filter((light) => light.id !== action.id);
       const selectedLightId =
         state.selectedLightId === action.id ? (lights[0]?.id ?? null) : state.selectedLightId;
-      return { lights, selectedLightId };
+      return { ...state, lights, selectedLightId };
     }
 
     case 'light/select':
       return { ...state, selectedLightId: action.id };
 
     case 'preset/load':
-      return { lights: action.lights, selectedLightId: action.lights[0]?.id ?? null };
+      return { ...state, lights: action.lights, selectedLightId: action.lights[0]?.id ?? null };
+
+    case 'view/setShowFixtures':
+      return { ...state, showFixtures: action.visible };
 
     default:
       throw new Error(`Unhandled lighting action: ${action.type}`);
@@ -154,6 +170,7 @@ export function LightingProvider({ children }) {
       updatePlacement: (id, changes) => dispatch({ type: 'light/updatePlacement', id, changes }),
       removeLight: (id) => dispatch({ type: 'light/remove', id }),
       selectLight: (id) => dispatch({ type: 'light/select', id }),
+      setShowFixtures: (visible) => dispatch({ type: 'view/setShowFixtures', visible }),
       loadPreset: (presetId) =>
         dispatch({ type: 'preset/load', lights: buildLightsFromPreset(presetId) }),
     }),

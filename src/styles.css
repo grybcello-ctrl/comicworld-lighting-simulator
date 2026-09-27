@@ -192,8 +192,8 @@ body,
 }
 
 .light-card__dot--on {
-  background: var(--color-light-on);
-  box-shadow: 0 0 6px var(--color-light-on);
+  background: var(--dot-color, var(--color-light-on));
+  box-shadow: 0 0 6px var(--dot-color, var(--color-light-on));
 }
 
 .light-card__titles {
@@ -268,4 +268,58 @@ body,
 .readout dd {
   margin: 0;
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Color ---------- */
+.color-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 3px;
+  vertical-align: -2px;
+}
+
+.readout__swatch-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------- Fixture visibility toggle ---------- */
+.fixture-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+.fixture-toggle__icon {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.fixture-toggle__text {
+  display: flex;
+  flex-direction: column;
+}
+
+.fixture-toggle__text small {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.fixture-toggle--off {
+  border-color: var(--color-light-on);
+}
+
+.fixture-toggle--off .fixture-toggle__icon {
+  border-color: var(--color-light-on);
+  background: transparent;
 }

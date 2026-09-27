@@ -5,11 +5,13 @@
  */
 import { equipmentConfig } from './equipmentConfig.js';
 
-const { strobes, modifiers, grids, strobeCategories, modifierCategories } = equipmentConfig;
+const { strobes, modifiers, grids, gels, strobeCategories, modifierCategories, gelCategories } =
+  equipmentConfig;
 
 const strobeById = new Map(strobes.map((strobe) => [strobe.id, strobe]));
 const modifierById = new Map(modifiers.map((modifier) => [modifier.id, modifier]));
 const gridById = new Map(grids.map((grid) => [grid.id, grid]));
+const gelById = new Map(gels.map((gel) => [gel.id, gel]));
 
 export const getAllStrobes = () => strobes;
 export const getAllModifiers = () => modifiers;
@@ -18,6 +20,8 @@ export const getAllGrids = () => grids;
 export const getStrobeById = (id) => strobeById.get(id) ?? null;
 export const getModifierById = (id) => modifierById.get(id) ?? null;
 export const getGridById = (id) => (id ? (gridById.get(id) ?? null) : null);
+export const getAllGels = () => gels;
+export const getGelById = (id) => (id ? (gelById.get(id) ?? null) : null);
 
 /** Native mount plus any mounts reachable through an official adapter. */
 const getUsableMounts = (strobe) => [strobe.mount, ...(strobe.adapterMounts ?? [])];
@@ -49,6 +53,16 @@ export function getCompatibleGrids(modifierId) {
 export const isGridCompatible = (modifierId, gridId) =>
   getCompatibleGrids(modifierId).some((grid) => grid.id === gridId);
 
+/** Gels that physically fit the strobe's head (native mount only — no adapters). */
+export function getCompatibleGels(strobeId) {
+  const strobe = getStrobeById(strobeId);
+  if (!strobe) return [];
+  return gels.filter((gel) => gel.mounts.includes(strobe.mount));
+}
+
+export const isGelCompatible = (strobeId, gelId) =>
+  getCompatibleGels(strobeId).some((gel) => gel.id === gelId);
+
 /**
  * Groups items by their `category` field, preserving the order defined in
  * the category map. Unknown categories are appended at the end.
@@ -70,6 +84,7 @@ function groupByCategory(items, categoryMap) {
 export const groupStrobesByCategory = (items = strobes) => groupByCategory(items, strobeCategories);
 export const groupModifiersByCategory = (items = modifiers) =>
   groupByCategory(items, modifierCategories);
+export const groupGelsByCategory = (items = gels) => groupByCategory(items, gelCategories);
 
 /** Development-time sanity checks for catalog entries. */
 function validateCatalog() {
@@ -83,6 +98,7 @@ function validateCatalog() {
   assertUniqueIds(strobes, 'strobe');
   assertUniqueIds(modifiers, 'modifier');
   assertUniqueIds(grids, 'grid');
+  assertUniqueIds(gels, 'gel');
 
   for (const modifier of modifiers) {
     for (const gridId of modifier.gridIds ?? []) {

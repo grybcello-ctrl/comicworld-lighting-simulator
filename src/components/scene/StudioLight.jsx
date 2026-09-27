@@ -1,10 +1,15 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
-import { Object3D } from 'three';
-import { getGridById, getModifierById, getStrobeById } from '../../config/equipmentRegistry.js';
+import { Color, LinearSRGBColorSpace, Object3D } from 'three';
+import {
+  getGelById,
+  getGridById,
+  getModifierById,
+  getStrobeById,
+} from '../../config/equipmentRegistry.js';
 import { RENDER_CONFIG, SUBJECT_TARGET } from '../../config/sceneConfig.js';
 import { resolveLightRig } from '../../utils/beamModel.js';
 import { getBeamProfileTexture } from '../../utils/beamProfileTexture.js';
-import { kelvinToHex } from '../../utils/colorTemperature.js';
+import { resolveLightColor } from '../../utils/colorTemperature.js';
 import { placementToPosition } from '../../utils/lightMath.js';
 import { MODIFIER_RENDERERS, resolveRenderer, STROBE_BODY_RENDERERS } from './fixtures/index.js';
 
@@ -29,11 +34,26 @@ function LightStand({ position }) {
 /**
  * Renders one LightInstance: stand, strobe body, modifier, and the three.js
  * lights produced by `resolveLightRig` (SpotLight and/or RectAreaLight).
+ *
+ * `showFixture = false` hides only the meshes (stand, body, modifier). The
+ * lights are deliberately kept *outside* the hidden groups: three.js skips the
+ * children of invisible objects, lights included.
  */
-export function StudioLight({ light, isSelected, onSelect }) {
+export function StudioLight({ light, isSelected, showFixture = true, onSelect }) {
   const strobe = getStrobeById(light.strobeId);
   const modifier = getModifierById(light.modifierId);
   const grid = getGridById(light.gridId);
+  const gel = getGelById(light.gelId);
+
+  // Kelvin × gel, mixed spectrally. Luminance = gel transmission, so the gel's
+  // light loss is baked into the color and scales both light types equally.
+  const { lightColor, emitColor } = useMemo(() => {
+    const resolved = resolveLightColor(light.colorTempK, gel);
+    return {
+      lightColor: new Color().setRGB(...resolved.linearRgb, LinearSRGBColorSpace),
+      emitColor: new Color(resolved.displayHex),
+    };
+  }, [light.colorTempK, gel]);
 
   const fixtureRef = useRef(null);
   const target = useMemo(() => new Object3D(), []);
@@ -69,8 +89,6 @@ export function StudioLight({ light, isSelected, onSelect }) {
 
   const BodyRenderer = resolveRenderer(STROBE_BODY_RENDERERS, strobe.body.shape, 'cylinder');
   const ModifierRenderer = resolveRenderer(MODIFIER_RENDERERS, modifier.geometry.shape, 'none');
-  const color = kelvinToHex(light.colorTempK);
-
   const handleClick = (event) => {
     event.stopPropagation();
     onSelect(light.id);
@@ -78,18 +96,24 @@ export function StudioLight({ light, isSelected, onSelect }) {
 
   return (
     <group name={`studio-light-${light.id}`}>
-      <LightStand position={position} />
+      <group visible={showFixture}>
+        <LightStand position={position} />
+      </group>
 
-      <group ref={fixtureRef} position={position} onClick={handleClick}>
-        {BodyRenderer && <BodyRenderer body={strobe.body} isSelected={isSelected} />}
-        {ModifierRenderer && (
-          <ModifierRenderer
-            geometry={modifier.geometry}
-            isLit={light.enabled}
-            grid={grid}
-            focusRod={light.focusRod}
-          />
-        )}
+      {/* Invisible meshes still raycast in three.js, so drop the handler when hidden. */}
+      <group ref={fixtureRef} position={position} onClick={showFixture ? handleClick : undefined}>
+        <group visible={showFixture}>
+          {BodyRenderer && <BodyRenderer body={strobe.body} isSelected={isSelected} />}
+          {ModifierRenderer && (
+            <ModifierRenderer
+              geometry={modifier.geometry}
+              isLit={light.enabled}
+              emitColor={emitColor}
+              grid={grid}
+              focusRod={light.focusRod}
+            />
+          )}
+        </group>
         {rig.area && (
           // RectAreaLight emits along its local -Z; rotate so it faces the fixture's +Z.
           <rectAreaLight
@@ -98,7 +122,7 @@ export function StudioLight({ light, isSelected, onSelect }) {
             width={rig.area.width}
             height={rig.area.height}
             intensity={rig.area.intensity}
-            color={color}
+            color={lightColor}
             visible={light.enabled}
           />
         )}
@@ -111,7 +135,7 @@ export function StudioLight({ light, isSelected, onSelect }) {
           target={target}
           visible={light.enabled}
           intensity={rig.spot.intensity}
-          color={color}
+          color={lightColor}
           angle={rig.spot.angle}
           penumbra={rig.spot.penumbra}
           decay={rig.spot.decay}

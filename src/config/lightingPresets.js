@@ -5,6 +5,7 @@
  *   elevationDeg 0 = eye level, positive = above
  *   distance     meters from the head
  * powerLevel uses the Connect-style scale (10.0 = full, -1.0 = one stop).
+ * Optional: colorTempK (3200–6500), gelId (OCF gels, B10-series strobes only).
  */
 export const LIGHTING_PRESETS = [
   {
@@ -25,6 +26,36 @@ export const LIGHTING_PRESETS = [
         modifierId: 'profoto-ocf-softbox-1x4',
         powerLevel: 6,
         placement: { azimuthDeg: -135, elevationDeg: 10, distance: 1.5 },
+      },
+    ],
+  },
+  {
+    id: 'gel-split',
+    name: 'Gel Split (Scarlet × Peacock Blue + ½ CTO Key)',
+    lights: [
+      {
+        label: 'Key',
+        strobeId: 'profoto-b10x-plus',
+        modifierId: 'profoto-ocf-beauty-dish-white-2',
+        gelId: 'ocf-gel-cto-half',
+        powerLevel: 5.5,
+        placement: { azimuthDeg: 10, elevationDeg: 30, distance: 1.6 },
+      },
+      {
+        label: 'Left edge',
+        strobeId: 'profoto-b10-plus',
+        modifierId: 'profoto-ocf-softbox-1x4',
+        gelId: 'ocf-gel-scarlet',
+        powerLevel: 8,
+        placement: { azimuthDeg: 110, elevationDeg: 0, distance: 1.4 },
+      },
+      {
+        label: 'Right edge',
+        strobeId: 'profoto-b10-plus',
+        modifierId: 'profoto-ocf-softbox-1x4',
+        gelId: 'ocf-gel-peacock-blue',
+        powerLevel: 7.5,
+        placement: { azimuthDeg: -110, elevationDeg: 0, distance: 1.4 },
       },
     ],
   },
