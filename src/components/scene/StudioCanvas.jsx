@@ -1,9 +1,13 @@
 import { OrbitControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { CAMERA_CONFIG, RENDER_CONFIG } from '../../config/sceneConfig.js';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
 import { BustSubject } from './BustSubject.jsx';
 import { StudioLight } from './StudioLight.jsx';
+
+// RectAreaLight (softboxes) needs its LTC lookup textures registered once.
+RectAreaLightUniformsLib.init();
 
 function StudioFloor() {
   return (

@@ -4,8 +4,51 @@
  *   azimuthDeg   0 = in front of the subject (camera side), +90 = subject's left
  *   elevationDeg 0 = eye level, positive = above
  *   distance     meters from the head
+ * powerLevel uses the Connect-style scale (10.0 = full, -1.0 = one stop).
  */
 export const LIGHTING_PRESETS = [
+  {
+    id: 'para-fashion',
+    name: 'Para Fashion (Para 133HR + Strip Rim)',
+    lights: [
+      {
+        label: 'Key',
+        strobeId: 'profoto-b10x-plus',
+        modifierId: 'broncolor-para-133hr',
+        powerLevel: 6.5,
+        focusRod: 25,
+        placement: { azimuthDeg: 20, elevationDeg: 25, distance: 2.2 },
+      },
+      {
+        label: 'Rim',
+        strobeId: 'profoto-b10',
+        modifierId: 'profoto-ocf-softbox-1x4',
+        powerLevel: 6,
+        placement: { azimuthDeg: -135, elevationDeg: 10, distance: 1.5 },
+      },
+    ],
+  },
+  {
+    id: 'grid-spot-drama',
+    name: 'Grid Spot Drama (10° Grid + Octa Fill)',
+    lights: [
+      {
+        label: 'Spot',
+        strobeId: 'profoto-b10-plus',
+        modifierId: 'profoto-zoom-reflector-white',
+        gridId: 'profoto-grid-10-white',
+        powerLevel: 6,
+        placement: { azimuthDeg: 50, elevationDeg: 30, distance: 2 },
+      },
+      {
+        label: 'Fill',
+        strobeId: 'profoto-b10',
+        modifierId: 'profoto-rfi-octa-3',
+        powerLevel: 4,
+        placement: { azimuthDeg: -30, elevationDeg: 5, distance: 2.4 },
+      },
+    ],
+  },
   {
     id: 'rembrandt',
     name: 'Rembrandt (Key + Fill)',
@@ -14,14 +57,14 @@ export const LIGHTING_PRESETS = [
         label: 'Key',
         strobeId: 'monolight-600',
         modifierId: 'octabox-120',
-        powerStops: -3,
+        powerLevel: 7.0,
         placement: { azimuthDeg: 45, elevationDeg: 35, distance: 1.8 },
       },
       {
         label: 'Fill',
         strobeId: 'monolight-400',
         modifierId: 'umbrella-white-105',
-        powerStops: -5,
+        powerLevel: 5.0,
         placement: { azimuthDeg: -40, elevationDeg: 5, distance: 2.4 },
       },
     ],
@@ -34,14 +77,14 @@ export const LIGHTING_PRESETS = [
         label: 'Top',
         strobeId: 'monolight-600',
         modifierId: 'beauty-dish-55',
-        powerStops: -3.5,
+        powerLevel: 6.5,
         placement: { azimuthDeg: 0, elevationDeg: 40, distance: 1.3 },
       },
       {
         label: 'Bottom',
         strobeId: 'monolight-400',
         modifierId: 'stripbox-30x120',
-        powerStops: -5,
+        powerLevel: 5.0,
         placement: { azimuthDeg: 0, elevationDeg: -20, distance: 1.2 },
       },
     ],
@@ -54,21 +97,21 @@ export const LIGHTING_PRESETS = [
         label: 'Key',
         strobeId: 'monolight-600',
         modifierId: 'softbox-60x90',
-        powerStops: -3,
+        powerLevel: 7.0,
         placement: { azimuthDeg: 40, elevationDeg: 25, distance: 1.8 },
       },
       {
         label: 'Fill',
         strobeId: 'monolight-400',
         modifierId: 'umbrella-white-105',
-        powerStops: -5.5,
+        powerLevel: 4.5,
         placement: { azimuthDeg: -50, elevationDeg: 10, distance: 2.5 },
       },
       {
         label: 'Rim',
         strobeId: 'speedlight-76',
         modifierId: 'speedlight-softbox-40',
-        powerStops: -1,
+        powerLevel: 9.0,
         placement: { azimuthDeg: -150, elevationDeg: 30, distance: 1.6 },
       },
     ],

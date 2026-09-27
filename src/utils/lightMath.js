@@ -1,6 +1,14 @@
-import { RENDER_CONFIG } from '../config/sceneConfig.js';
-
 const DEG_TO_RAD = Math.PI / 180;
+
+export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+export const lerp = (from, to, t) => from + (to - from) * t;
+
+/** Hermite smoothstep, same as GLSL. */
+export function smoothstep(edge0, edge1, x) {
+  if (edge0 >= edge1) return x < edge0 ? 0 : 1;
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
 
 /**
  * Converts a spherical placement (relative to `origin`) into world coordinates.
@@ -18,22 +26,30 @@ export function placementToPosition({ azimuthDeg, elevationDeg, distance }, orig
   ];
 }
 
+// ---------------------------------------------------------------------------
+// Power scale (Profoto Connect Pro style)
+// ---------------------------------------------------------------------------
+
+/** Level shown for full power. */
+export const FULL_POWER_LEVEL = 10;
+
 /**
- * Spot light intensity for a strobe/modifier pair at a given power setting.
- * powerStops: 0 = full power, -1 = half power, etc.
+ * f-stop power law: every +1.0 on the scale doubles the flash energy.
+ *   outputWs = maxWs * 2^(level - 10)
+ * e.g. B10 Plus (500Ws): 10.0 -> 500Ws, 9.0 -> 250Ws, 1.0 -> ~1Ws.
  */
-export function computeLightIntensity(strobe, modifier, powerStops) {
-  const outputWs = strobe.maxPowerWs * 2 ** powerStops;
-  const transmission = 2 ** -(modifier?.lighting.lightLossStops ?? 0);
-  return outputWs * transmission * RENDER_CONFIG.candelaPerWattSecond;
+export const powerLevelToWs = (maxWs, level) => maxWs * 2 ** (level - FULL_POWER_LEVEL);
+
+/** Snaps a slider value to the strobe's step and range (avoids 7.300000001). */
+export function snapPowerLevel(level, { min, max, step }) {
+  const snapped = Math.round(level / step) * step;
+  return Number(clamp(snapped, min, max).toFixed(1));
 }
 
-/** Formats stops as a flash-style fraction, e.g. -2.3 -> "1/8 +0.7". */
-export function formatPowerStops(powerStops) {
-  const wholeStops = Math.floor(powerStops + 1e-6);
-  const remainder = powerStops - wholeStops;
-  const fraction = `1/${2 ** -wholeStops}`;
-  return remainder > 0.05 ? `${fraction} +${remainder.toFixed(1)}` : fraction;
-}
+export const formatPowerLevel = (level) => level.toFixed(1);
 
-export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+export function formatWs(ws) {
+  if (ws >= 10) return `${ws.toFixed(0)} Ws`;
+  if (ws >= 1) return `${ws.toFixed(1)} Ws`;
+  return `${ws.toFixed(2)} Ws`;
+}

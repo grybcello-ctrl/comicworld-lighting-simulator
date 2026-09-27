@@ -238,3 +238,34 @@ body,
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
+
+/* ---------- Hints & readouts ---------- */
+.field__hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.readout {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.readout__row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.readout dt {
+  color: var(--color-text-muted);
+}
+
+.readout dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}

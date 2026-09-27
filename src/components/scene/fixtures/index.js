@@ -7,6 +7,7 @@ import {
   BareBulbMesh,
   BeautyDishMesh,
   OctaSoftboxMesh,
+  ParabolicMesh,
   RectSoftboxMesh,
   ReflectorMesh,
   UmbrellaMesh,
@@ -24,6 +25,7 @@ export const MODIFIER_RENDERERS = {
   octaSoftbox: OctaSoftboxMesh,
   umbrella: UmbrellaMesh,
   beautyDish: BeautyDishMesh,
+  parabolic: ParabolicMesh,
 };
 
 const warnedShapes = new Set();
