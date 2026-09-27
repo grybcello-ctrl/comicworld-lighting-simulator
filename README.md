@@ -32,7 +32,8 @@ src/
 │  ├─ beamProfile.js          # Beam profile, flattening, energy (effective solid angle)
 │  ├─ parabolicReflector.js   # Focusing-rod head travel, dish irradiance (glow)
 │  ├─ modelLoader.js          # Local glTF/GLB loading (Draco, Meshopt)
-│  ├─ modelFileSet.js         # Multi-file .gltf: main file + Blob URL map + URL modifier
+│  ├─ modelFileSet.js         # Multi-file .gltf/.glb: main file + Blob URL map + URL modifier
+│  ├─ externalTextureBinder.js # Binds unreferenced images to materials by file name
 │  ├─ blobUrlRegistry.js      # Tracks and revokes a model's Blob URLs
 │  ├─ textureColorSpace.js    # Ensures color textures are SRGBColorSpace
 │  ├─ shadowSides.js          # Double-sided materials, shadow sides, slope bias
@@ -163,3 +164,17 @@ Light instances only store `strobeId` / `modifierId`, and the specs are always r
 - **Slope bias:** each subject mesh gets a per-light `glPolygonOffset` in the shadow pass, with factor `1.5 + shadow.radius` (the PCF kernel size). This keeps double-sided sheets and thin solids such as ears from shadowing themselves under soft lights.
 - **Normal bias:** `shadow.normalBias` is 0. three.js offsets along the vertex normal, which is not flipped on a double-sided card's back face, so any positive value darkens the lit back side of hair cards.
 - **Unchanged:** radius, map size, texel size, penumbra and the parabolic rig are identical to before.
+
+### External textures with a .glb
+
+A model shows up white when `GLTFLoader` never gets a texture for it. There are two different causes:
+
+1. **The model references textures, but the reference can't be resolved.** Examples: a stale `blob:http://other-host/…` URL, an absolute `http://…` or `file:///D:/…` path, or a name in a different letter case or Unicode form (macOS reports Korean names decomposed, NFD).
+   - The URL modifier now extracts the pure file name from any request: it strips the query, percent-decodes, converts `\` to `/`, drops the scheme/host/drive, takes the last segment, then applies NFC and lower case.
+   - It then looks that name up among the selected files.
+   - If the name isn't found, it tries the same name with a different image extension (`skin.tga` → `skin.png`).
+2. **The .glb has no texture references at all.** This is common after FBX/OBJ conversion or a "no textures" export. `GLTFLoader` never requests anything, so no redirect can help.
+   - Selected images the model never requested are bound by file name (`externalTextureBinder.js`). For example `Body_BaseColor.png` → material "Body" `map`, and `Body_Normal` / `_ORM` / `_Roughness` / `_Metallic` / `_Emissive` go to the matching slots. For a single-material model, the file goes to that one material.
+   - Slots the model already fills are never overwritten. Ambiguous names are reported, not guessed.
+
+The panel shows how the model stores its textures (**Textures in the model**), what was bound by file name, and what was not applied and why. The same `LoadingManager` is passed to `GLTFLoader` (buffers and images) and to the binder, so every request goes through the URL modifier.
