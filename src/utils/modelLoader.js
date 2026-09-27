@@ -1,65 +1,64 @@
 /**
  * Local glTF/GLB loading — nothing leaves the browser.
  *
- * - The chosen File becomes a blob URL via URL.createObjectURL() and is parsed
- *   by GLTFLoader (lazy-imported, so the main bundle does not grow).
- * - A .gltf may reference external files (scene.bin, textures/skin.png). The
- *   user selects them together with the .gltf; a LoadingManager URL modifier
- *   maps each relative URI (resolved against the blob URL) to the matching
- *   file's own blob URL by file name.
- * - Draco (KHR_draco_mesh_compression) and Meshopt (EXT_meshopt_compression)
- *   use the decoders bundled with three.js (same-origin assets, no CDN).
- * - Every object URL created here is revoked as soon as the load settles
- *   (success, error or cancel): by then GLTFLoader has read all buffers and
- *   decoded all images, so the URLs are no longer needed.
- * - Cancelling never interrupts GLTFLoader mid-parse (that would orphan
- *   half-built textures); the load runs to completion and its result is
- *   disposed here instead of being returned.
+ * Multi-file .gltf (separate .bin and texture files):
+ *   1. The selection is split into one main file (*.gltf / *.glb) and all
+ *      other files (modelFileSet.js).
+ *   2. Every file gets a Blob URL (URL.createObjectURL) tracked in one
+ *      registry (blobUrlRegistry.js); the other files form a Blob URL map
+ *      keyed by file name.
+ *   3. A THREE.LoadingManager with setURLModifier() redirects each request
+ *      GLTFLoader makes (buffers, images) to the matching Blob URL.
+ * GLTFLoader, DRACOLoader and the Meshopt decoder are lazy-imported, so the
+ * main bundle does not grow; the decoders ship with three.js (same origin).
+ *
+ * Blob URL lifetime: on success the registry is handed to the caller together
+ * with the model, and revoked when that model is replaced or removed. On error
+ * or cancel it is revoked here immediately, and textures GLTFLoader already
+ * decoded before the failure (e.g. images loaded, .bin missing) are disposed
+ * too — they never reach a scene, so nobody else could free them. Cancelling never interrupts
+ * GLTFLoader mid-parse (that would orphan half-built textures): the load runs
+ * to completion and its result is disposed here instead of being returned.
  */
-import { SUBJECT_CONFIG } from '../config/sceneConfig.js';
+import { createBlobUrlRegistry } from './blobUrlRegistry.js';
 import { disposeObject3D } from './disposeObject3D.js';
+import { createResourceResolver, extensionOf, ModelFileError, splitModelFiles } from './modelFileSet.js';
+import { SUBJECT_CONFIG } from '../config/sceneConfig.js';
 
 export class ModelLoadError extends Error {}
 
-const extensionOf = (name) => {
-  const dot = name.lastIndexOf('.');
-  return dot >= 0 ? name.slice(dot).toLowerCase() : '';
-};
-
-/** Matches the UUID path of a blob URL (our own URLs and GLTFLoader's internal image URLs). */
-const BLOB_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Value for the file input's `accept` attribute. */
+/** Value for the file input's `accept` attribute (a hint; any file can be added). */
 export const MODEL_FILE_ACCEPT = [
   ...SUBJECT_CONFIG.modelExtensions,
-  ...SUBJECT_CONFIG.companionExtensions,
+  ...SUBJECT_CONFIG.resourceExtensionHints,
   'model/gltf-binary',
   'model/gltf+json',
 ].join(',');
 
 /**
- * Splits a file selection into exactly one model file and its companions.
- * @param {File[] | FileList} files
+ * GLTFLoader plugin that only records the parser, so a failed load can free
+ * the textures the parser had already created (parser.textureCache).
  */
-export function classifyModelFiles(files) {
-  const list = Array.from(files ?? []);
-  const models = list.filter((file) => SUBJECT_CONFIG.modelExtensions.includes(extensionOf(file.name)));
-  if (models.length === 0) {
-    const names = list.map((file) => file.name).join(', ') || 'nothing';
-    throw new ModelLoadError(`Choose a .glb or .gltf file (selected: ${names}).`);
-  }
-  if (models.length > 1) {
-    throw new ModelLoadError(
-      `Select one model at a time (got ${models.map((file) => file.name).join(', ')}).`,
-    );
-  }
-  const [modelFile] = models;
-  const others = list.filter((file) => file !== modelFile);
-  return {
-    modelFile,
-    companions: others.filter((file) => SUBJECT_CONFIG.companionExtensions.includes(extensionOf(file.name))),
-    ignored: others.filter((file) => !SUBJECT_CONFIG.companionExtensions.includes(extensionOf(file.name))),
+function captureParser(onParser) {
+  return (parser) => {
+    onParser(parser);
+    return { name: 'studio_capture_parser' };
   };
+}
+
+/** Disposes every texture a (failed) parse created, incl. decoded ImageBitmaps. */
+async function disposeParserTextures(parser) {
+  const pending = Object.values(parser?.textureCache ?? {});
+  const textures = await Promise.all(pending.map((promise) => promise.catch(() => null)));
+  let count = 0;
+  for (const texture of new Set(textures)) {
+    if (!texture) continue;
+    const image = texture.source?.data ?? texture.image;
+    if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) image.close();
+    texture.dispose();
+    count++;
+  }
+  return count;
 }
 
 /** Turns loader errors into messages a user can act on. */
@@ -77,33 +76,33 @@ function explainLoadError(error, missingFiles, modelFile) {
 
 /**
  * Starts loading a model from local files.
- * @param {File[] | FileList} files  one .glb/.gltf plus optional companion files
+ * @param {File[] | FileList} files  one .glb/.gltf plus any number of resource files
  * @returns {{ promise: Promise<LoadedModel>, cancel: () => void }}
  *
  * @typedef {Object} LoadedModel
  * @property {import('three').Group} scene  the glTF default scene (caller owns it)
+ * @property {ReturnType<typeof createBlobUrlRegistry>} blobUrls
+ *           Blob URLs of all selected files (caller owns them; revoke on clean-up)
  * @property {string} fileName
- * @property {number} totalBytes             model + companion files
- * @property {number} companionCount
- * @property {string[]} missingFiles         referenced but not selected (e.g. textures)
- * @property {string[]} ignoredFiles         selected but not usable
+ * @property {number} totalBytes             all selected files
+ * @property {number} resourceCount          selected files besides the model
+ * @property {number} mappedCount            resource files the model actually requested
+ * @property {string[]} missingFiles         requested but not selected (e.g. a texture)
+ * @property {string[]} unusedFiles          selected but never requested
+ * @property {string[]} ambiguousFiles       requested names matching several files
  * @property {string[]} extensionsUsed
  * @property {number} animationCount
  * @property {number} loadMs
  */
 export function loadModelFromFiles(files) {
-  const { modelFile, companions, ignored } = classifyModelFiles(files);
-
-  const objectUrls = new Set();
-  const createObjectUrl = (blob) => {
-    const url = URL.createObjectURL(blob);
-    objectUrls.add(url);
-    return url;
-  };
-  const revokeAll = () => {
-    for (const url of objectUrls) URL.revokeObjectURL(url);
-    objectUrls.clear();
-  };
+  let split;
+  try {
+    split = splitModelFiles(files);
+  } catch (error) {
+    throw new ModelLoadError(error.message);
+  }
+  const { modelFile, resourceFiles } = split;
+  const blobUrls = createBlobUrlRegistry();
 
   let cancelled = false;
   const cancel = () => {
@@ -112,68 +111,69 @@ export function loadModelFromFiles(files) {
 
   const promise = (async () => {
     const startedAt = performance.now();
-    const missingFiles = new Set();
+    let resolver = null;
     let dracoLoader = null;
+    let parser = null;
+    let succeeded = false;
     try {
       const [{ LoadingManager }, { GLTFLoader }, { DRACOLoader, DRACO_GLTF_CONFIG }, { MeshoptDecoder }] =
         await Promise.all([
-        import('three'),
-        import('three/examples/jsm/loaders/GLTFLoader.js'),
-        import('three/examples/jsm/loaders/DRACOLoader.js'),
-        import('three/examples/jsm/libs/meshopt_decoder.module.js'),
-      ]);
+          import('three'),
+          import('three/examples/jsm/loaders/GLTFLoader.js'),
+          import('three/examples/jsm/loaders/DRACOLoader.js'),
+          import('three/examples/jsm/libs/meshopt_decoder.module.js'),
+        ]);
       if (cancelled) throw new ModelLoadError('Load cancelled.');
 
-      const modelUrl = createObjectUrl(modelFile);
-      const companionUrls = new Map(
-        companions.map((file) => [file.name.toLowerCase(), createObjectUrl(file)]),
-      );
-      // Relative URIs inside a .gltf resolve against "blob:<origin>/".
-      const blobBase = modelUrl.slice(0, modelUrl.lastIndexOf('/') + 1);
-
+      resolver = createResourceResolver({ modelFile, resourceFiles, registry: blobUrls });
       const manager = new LoadingManager();
-      manager.setURLModifier((url) => {
-        if (!url.startsWith(blobBase)) return url; // data:, http(s):, decoder files
-        const relativePath = decodeURIComponent(url.slice(blobBase.length).split(/[?#]/)[0]);
-        if (BLOB_UUID_PATTERN.test(relativePath)) return url; // a real blob URL
-        const fileName = relativePath.split(/[\\/]/).pop().toLowerCase();
-        const mapped = companionUrls.get(fileName);
-        if (mapped) return mapped;
-        missingFiles.add(relativePath);
-        return url;
-      });
+      manager.setURLModifier(resolver.resolveUrl);
 
       // The glTF-specific Draco build (smaller than the default decoder).
       dracoLoader = new DRACOLoader(manager).setDecoderPath(DRACO_GLTF_CONFIG);
-      const loader = new GLTFLoader(manager).setDRACOLoader(dracoLoader).setMeshoptDecoder(MeshoptDecoder);
+      const loader = new GLTFLoader(manager)
+        .setDRACOLoader(dracoLoader)
+        .setMeshoptDecoder(MeshoptDecoder)
+        .register(captureParser((value) => (parser = value)));
 
-      const gltf = await loader.loadAsync(modelUrl);
+      const gltf = await loader.loadAsync(resolver.modelUrl);
       if (cancelled) {
         disposeObject3D(gltf.scene); // superseded: free it right here
         throw new ModelLoadError('Load cancelled.');
       }
       if (!gltf.scene) throw new ModelLoadError(`${modelFile.name} contains no scene.`);
 
+      const report = resolver.report();
+      succeeded = true;
       return {
         scene: gltf.scene,
+        blobUrls,
         fileName: modelFile.name,
-        totalBytes: [modelFile, ...companions].reduce((sum, file) => sum + file.size, 0),
-        companionCount: companions.length,
-        missingFiles: [...missingFiles],
-        ignoredFiles: ignored.map((file) => file.name),
+        totalBytes: [modelFile, ...resourceFiles].reduce((sum, file) => sum + file.size, 0),
+        resourceCount: resourceFiles.length,
+        mappedCount: report.mapped,
+        missingFiles: report.missing,
+        unusedFiles: report.unused,
+        ambiguousFiles: report.ambiguous,
         extensionsUsed: gltf.parser?.json?.extensionsUsed ?? [],
         animationCount: gltf.animations?.length ?? 0,
         loadMs: performance.now() - startedAt,
       };
     } catch (error) {
       if (error instanceof ModelLoadError) throw error;
-      throw new ModelLoadError(explainLoadError(error, [...missingFiles], modelFile));
+      if (error instanceof ModelFileError) throw new ModelLoadError(error.message);
+      throw new ModelLoadError(explainLoadError(error, resolver?.report().missing ?? [], modelFile));
     } finally {
-      // Decoder workers and every blob URL are released no matter what happened.
-      dracoLoader?.dispose();
-      revokeAll();
+      dracoLoader?.dispose(); // decoder workers
+      if (!succeeded) {
+        // Nobody will own these URLs or partially built textures.
+        blobUrls.revokeAll();
+        await disposeParserTextures(parser);
+      }
     }
   })();
 
   return { promise, cancel };
 }
+
+export { extensionOf };
