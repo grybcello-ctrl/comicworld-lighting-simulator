@@ -53,6 +53,7 @@ function ModelReadout({ info }) {
   if (compression.length) notes.push(`decoded ${compression.join(', ')}`);
   if (info.animationCount) notes.push(`${info.animationCount} animation(s) not played (static pose)`);
   if (info.missingFiles.length) notes.push(`missing: ${info.missingFiles.join(', ')}`);
+  if (info.unsupportedExtensions.length) notes.push(`unsupported glTF extensions: ${info.unsupportedExtensions.join(', ')}`);
   if (info.substitutedFiles.length) {
     notes.push(`other extension used: ${info.substitutedFiles.map((item) => `${item.requested} → ${item.used}`).join(', ')}`);
   }
@@ -79,6 +80,14 @@ function ModelReadout({ info }) {
       label: 'Textures in the model',
       value: describeImageSources(info.imageSources),
     },
+    ...(info.specGlossMaterials.length
+      ? [
+          {
+            label: 'Material conversion',
+            value: `${info.specGlossMaterials.length} spec-gloss material(s) → PBR (KHR_materials_pbrSpecularGlossiness)`,
+          },
+        ]
+      : []),
     ...(info.boundByName.length
       ? [
           {

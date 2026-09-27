@@ -12,7 +12,11 @@
  *      manager instance is handed to GLTFLoader, whose parser passes it to its
  *      FileLoader (buffers) and ImageBitmapLoader/TextureLoader (images), and
  *      to DRACOLoader — every resource request goes through the modifier.
- *   4. Selected images the model never requested (typical for .glb files that
+ *   4. KHR_materials_pbrSpecularGlossiness (dropped by three r147, still used
+ *      by e.g. Sketchfab exports) is read by a plugin (gltfSpecGlossPlugin.js)
+ *      registered on the same loader; its textures load through the parser,
+ *      i.e. through the same manager and URL modifier.
+ *   5. Selected images the model never requested (typical for .glb files that
  *      lost their texture references) are bound to materials by file name
  *      (externalTextureBinder.js), through the same manager.
  * GLTFLoader, DRACOLoader and the Meshopt decoder are lazy-imported, so the
@@ -28,6 +32,7 @@
  */
 import { createBlobUrlRegistry } from './blobUrlRegistry.js';
 import { bindUnreferencedTextures } from './externalTextureBinder.js';
+import { createSpecGlossPlugin } from './gltfSpecGlossPlugin.js';
 import { disposeObject3D } from './disposeObject3D.js';
 import { createResourceResolver, extensionOf, ModelFileError, splitModelFiles } from './modelFileSet.js';
 import { SUBJECT_CONFIG } from '../config/sceneConfig.js';
@@ -75,6 +80,18 @@ async function disposeParserTextures(parser) {
   return count;
 }
 
+/** Extensions this three.js build (+ our plugins) handles; everything else is reported. */
+const HANDLED_EXTENSIONS = new Set([
+  'KHR_binary_glTF', 'KHR_draco_mesh_compression', 'KHR_lights_punctual', 'KHR_materials_clearcoat',
+  'KHR_materials_dispersion', 'KHR_materials_ior', 'KHR_materials_sheen', 'KHR_materials_specular',
+  'KHR_materials_transmission', 'KHR_materials_iridescence', 'KHR_materials_anisotropy', 'KHR_materials_unlit',
+  'KHR_materials_volume', 'KHR_texture_basisu', 'KHR_texture_transform', 'KHR_mesh_quantization',
+  'KHR_materials_emissive_strength', 'EXT_materials_bump', 'EXT_texture_webp', 'EXT_texture_avif',
+  'EXT_meshopt_compression', 'KHR_meshopt_compression', 'EXT_mesh_gpu_instancing',
+  'KHR_materials_pbrSpecularGlossiness',
+]);
+const findUnsupportedExtensions = (json) => (json?.extensionsUsed ?? []).filter((name) => !HANDLED_EXTENSIONS.has(name));
+
 /** Turns loader errors into messages a user can act on. */
 function explainLoadError(error, missingFiles, modelFile) {
   const message = error?.message ?? String(error);
@@ -112,6 +129,8 @@ function explainLoadError(error, missingFiles, modelFile) {
  * @property {{ embedded: number, external: number, total: number }} imageSources
  *           how the model itself stores its images
  * @property {number} modifierCalls          requests seen by the URL modifier
+ * @property {string[]} specGlossMaterials   materials converted from spec-gloss
+ * @property {string[]} unsupportedExtensions used by the file, not supported here
  * @property {string[]} extensionsUsed
  * @property {number} animationCount
  * @property {number} loadMs
@@ -153,10 +172,15 @@ export function loadModelFromFiles(files) {
 
       // The glTF-specific Draco build (smaller than the default decoder).
       dracoLoader = new DRACOLoader(manager).setDecoderPath(DRACO_GLTF_CONFIG);
+      const specGloss = { converted: [] };
+      // `manager` is the LoadingManager whose URL modifier maps every request;
+      // GLTFLoader hands it to the parser's FileLoader and image loader.
       const loader = new GLTFLoader(manager)
         .setDRACOLoader(dracoLoader)
         .setMeshoptDecoder(MeshoptDecoder)
-        .register(captureParser((value) => (parser = value)));
+        .register(captureParser((value) => (parser = value)))
+        .register((gltfParser) => createSpecGlossPlugin(gltfParser, specGloss));
+      if (loader.manager !== manager) throw new Error('GLTFLoader is not bound to the file-mapping LoadingManager.');
 
       const gltf = await loader.loadAsync(resolver.modelUrl);
       if (cancelled) {
@@ -197,6 +221,8 @@ export function loadModelFromFiles(files) {
         unboundImages: binding.unbound,
         imageSources: { embedded, external: images.length - embedded, total: images.length },
         modifierCalls: report.modifierCalls,
+        specGlossMaterials: specGloss.converted,
+        unsupportedExtensions: findUnsupportedExtensions(gltf.parser?.json),
         extensionsUsed: gltf.parser?.json?.extensionsUsed ?? [],
         animationCount: gltf.animations?.length ?? 0,
         loadMs: performance.now() - startedAt,

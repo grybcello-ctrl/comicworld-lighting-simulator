@@ -34,6 +34,7 @@ src/
 │  ├─ modelLoader.js          # Local glTF/GLB loading (Draco, Meshopt)
 │  ├─ modelFileSet.js         # Multi-file .gltf/.glb: main file + Blob URL map + URL modifier
 │  ├─ externalTextureBinder.js # Binds unreferenced images to materials by file name
+│  ├─ gltfSpecGlossPlugin.js  # KHR_materials_pbrSpecularGlossiness → MeshPhysicalMaterial
 │  ├─ blobUrlRegistry.js      # Tracks and revokes a model's Blob URLs
 │  ├─ textureColorSpace.js    # Ensures color textures are SRGBColorSpace
 │  ├─ shadowSides.js          # Double-sided materials, shadow sides, slope bias
@@ -178,3 +179,15 @@ A model shows up white when `GLTFLoader` never gets a texture for it. There are 
    - Slots the model already fills are never overwritten. Ambiguous names are reported, not guessed.
 
 The panel shows how the model stores its textures (**Textures in the model**), what was bound by file name, and what was not applied and why. The same `LoadingManager` is passed to `GLTFLoader` (buffers and images) and to the binder, so every request goes through the URL modifier.
+
+### Spec-gloss models (e.g. Sketchfab `scene.gltf` downloads)
+
+three.js dropped `KHR_materials_pbrSpecularGlossiness` in r147. Materials that store their textures only inside that extension load white, and `GLTFLoader` never even requests their texture files.
+
+- **Plugin:** a GLTFLoader plugin (`gltfSpecGlossPlugin.js`) registered on the same loader converts these materials to `MeshPhysicalMaterial`:
+  - diffuse → `map` (sRGB)
+  - specular F0 → `specularColor = F0 / 0.04` and `specularColorMap`
+  - glossiness → `roughness = 1 − glossiness`, with a `roughnessMap` derived from the texture's alpha channel
+  - `metalness` = 0
+- **Loading:** the textures load through the parser, so they go through the same `LoadingManager` and URL modifier as every other file.
+- **Name matching:** the name-based binder now matches in three steps. It tries the exact name first (numbers included, so `Body_1` and `Body_2` stay distinct), then tokens with numbers, then tokens without numbers.

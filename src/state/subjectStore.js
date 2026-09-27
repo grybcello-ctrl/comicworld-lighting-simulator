@@ -163,6 +163,8 @@ export async function loadCustomModel(files) {
           unboundImages: loaded.unboundImages,
           imageSources: loaded.imageSources,
           modifierCalls: loaded.modifierCalls,
+          specGlossMaterials: loaded.specGlossMaterials,
+          unsupportedExtensions: loaded.unsupportedExtensions,
           colorSpaces,
           extensionsUsed: loaded.extensionsUsed,
           animationCount: loaded.animationCount,
