@@ -26,6 +26,14 @@ function describeReleased(released) {
   return `Previous custom model disposed: ${parts.join(', ')}.`;
 }
 
+function describeImageSources({ embedded, external, total }) {
+  if (total === 0) return 'none — the file has no texture references (selected images are matched by name)';
+  const parts = [];
+  if (embedded) parts.push(`${embedded} embedded`);
+  if (external) parts.push(`${external} external file reference(s)`);
+  return parts.join(' · ');
+}
+
 function ModelReadout({ info }) {
   const minY = info.fittedMin[1];
   const [centerX, , centerZ] = info.fittedCenter;
@@ -45,7 +53,12 @@ function ModelReadout({ info }) {
   if (compression.length) notes.push(`decoded ${compression.join(', ')}`);
   if (info.animationCount) notes.push(`${info.animationCount} animation(s) not played (static pose)`);
   if (info.missingFiles.length) notes.push(`missing: ${info.missingFiles.join(', ')}`);
-  if (info.unusedFiles.length) notes.push(`not referenced by the model: ${info.unusedFiles.join(', ')}`);
+  if (info.substitutedFiles.length) {
+    notes.push(`other extension used: ${info.substitutedFiles.map((item) => `${item.requested} → ${item.used}`).join(', ')}`);
+  }
+  const unboundNames = new Set(info.unboundImages.map((item) => item.file));
+  const unusedOther = info.unusedFiles.filter((name) => !unboundNames.has(name));
+  if (unusedOther.length) notes.push(`not referenced by the model: ${unusedOther.join(', ')}`);
   if (info.ambiguousFiles.length) notes.push(`ambiguous names: ${info.ambiguousFiles.join(', ')}`);
   const { colorTextures, alreadySrgb, corrected, conflicts } = info.colorSpaces;
 
@@ -62,6 +75,26 @@ function ModelReadout({ info }) {
         ? `${info.mappedCount} / ${info.resourceCount} → blob URLs (${info.blobUrlCount} tracked)`
         : `none (self-contained) · ${info.blobUrlCount} blob URL tracked`,
     },
+    {
+      label: 'Textures in the model',
+      value: describeImageSources(info.imageSources),
+    },
+    ...(info.boundByName.length
+      ? [
+          {
+            label: 'Bound by file name',
+            value: info.boundByName.map((item) => `${item.file} → ${item.material} (${item.label})`).join(' · '),
+          },
+        ]
+      : []),
+    ...(info.unboundImages.length
+      ? [
+          {
+            label: 'Not applied',
+            value: info.unboundImages.map((item) => `${item.file}: ${item.reason}`).join(' · '),
+          },
+        ]
+      : []),
     {
       label: 'Color textures (sRGB)',
       value: colorTextures

@@ -8,7 +8,13 @@
  *      registry (blobUrlRegistry.js); the other files form a Blob URL map
  *      keyed by file name.
  *   3. A THREE.LoadingManager with setURLModifier() redirects each request
- *      GLTFLoader makes (buffers, images) to the matching Blob URL.
+ *      GLTFLoader makes (buffers, images) to the matching Blob URL. The same
+ *      manager instance is handed to GLTFLoader, whose parser passes it to its
+ *      FileLoader (buffers) and ImageBitmapLoader/TextureLoader (images), and
+ *      to DRACOLoader — every resource request goes through the modifier.
+ *   4. Selected images the model never requested (typical for .glb files that
+ *      lost their texture references) are bound to materials by file name
+ *      (externalTextureBinder.js), through the same manager.
  * GLTFLoader, DRACOLoader and the Meshopt decoder are lazy-imported, so the
  * main bundle does not grow; the decoders ship with three.js (same origin).
  *
@@ -21,6 +27,7 @@
  * to completion and its result is disposed here instead of being returned.
  */
 import { createBlobUrlRegistry } from './blobUrlRegistry.js';
+import { bindUnreferencedTextures } from './externalTextureBinder.js';
 import { disposeObject3D } from './disposeObject3D.js';
 import { createResourceResolver, extensionOf, ModelFileError, splitModelFiles } from './modelFileSet.js';
 import { SUBJECT_CONFIG } from '../config/sceneConfig.js';
@@ -46,7 +53,11 @@ function captureParser(onParser) {
   };
 }
 
-/** Disposes every texture a (failed) parse created, incl. decoded ImageBitmaps. */
+/**
+ * Disposes every texture a failed or cancelled parse created, incl. decoded
+ * ImageBitmaps. Textures of a scene that was already disposed are skipped
+ * (a closed ImageBitmap reports 0 × 0), so nothing is released twice.
+ */
 async function disposeParserTextures(parser) {
   const pending = Object.values(parser?.textureCache ?? {});
   const textures = await Promise.all(pending.map((promise) => promise.catch(() => null)));
@@ -54,7 +65,10 @@ async function disposeParserTextures(parser) {
   for (const texture of new Set(textures)) {
     if (!texture) continue;
     const image = texture.source?.data ?? texture.image;
-    if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) image.close();
+    if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) {
+      if (image.width === 0 && image.height === 0) continue; // already closed with its scene
+      image.close();
+    }
     texture.dispose();
     count++;
   }
@@ -90,6 +104,14 @@ function explainLoadError(error, missingFiles, modelFile) {
  * @property {string[]} missingFiles         requested but not selected (e.g. a texture)
  * @property {string[]} unusedFiles          selected but never requested
  * @property {string[]} ambiguousFiles       requested names matching several files
+ * @property {Array<{ requested: string, used: string }>} substitutedFiles
+ *           requested under another extension (skin.tga -> skin.png)
+ * @property {Array<{ file: string, material: string, slots: string[], label: string }>} boundByName
+ *           unreferenced images bound to materials by file name
+ * @property {Array<{ file: string, reason: string }>} unboundImages
+ * @property {{ embedded: number, external: number, total: number }} imageSources
+ *           how the model itself stores its images
+ * @property {number} modifierCalls          requests seen by the URL modifier
  * @property {string[]} extensionsUsed
  * @property {number} animationCount
  * @property {number} loadMs
@@ -143,7 +165,22 @@ export function loadModelFromFiles(files) {
       }
       if (!gltf.scene) throw new ModelLoadError(`${modelFile.name} contains no scene.`);
 
+      // Images the model never asked for: bind by file name, same manager.
+      const referenced = resolver.report();
+      const binding = await bindUnreferencedTextures({
+        root: gltf.scene,
+        unusedEntries: referenced.unusedEntries,
+        manager,
+      });
+      if (cancelled) {
+        disposeObject3D(gltf.scene);
+        throw new ModelLoadError('Load cancelled.');
+      }
+      const boundFiles = new Set(binding.bound.map((item) => item.file));
+
       const report = resolver.report();
+      const images = gltf.parser?.json?.images ?? [];
+      const embedded = images.filter((image) => image.bufferView !== undefined || /^data:/i.test(image.uri ?? '')).length;
       succeeded = true;
       return {
         scene: gltf.scene,
@@ -151,10 +188,15 @@ export function loadModelFromFiles(files) {
         fileName: modelFile.name,
         totalBytes: [modelFile, ...resourceFiles].reduce((sum, file) => sum + file.size, 0),
         resourceCount: resourceFiles.length,
-        mappedCount: report.mapped,
+        mappedCount: report.mapped + boundFiles.size,
         missingFiles: report.missing,
-        unusedFiles: report.unused,
+        unusedFiles: report.unused.filter((name) => !boundFiles.has(name)),
         ambiguousFiles: report.ambiguous,
+        substitutedFiles: report.substituted,
+        boundByName: binding.bound,
+        unboundImages: binding.unbound,
+        imageSources: { embedded, external: images.length - embedded, total: images.length },
+        modifierCalls: report.modifierCalls,
         extensionsUsed: gltf.parser?.json?.extensionsUsed ?? [],
         animationCount: gltf.animations?.length ?? 0,
         loadMs: performance.now() - startedAt,
