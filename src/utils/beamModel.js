@@ -6,14 +6,27 @@
  *   1. Energy:   outputWs = maxWs * 2^(powerLevel - 10)                  (f-stop law)
  *   2. Optics:   beam angle / penumbra / profile / gain / emitter size per light model
  *   3. Accessories, in physical order: inner diffuser (inside) -> grid (front)
- *   4. Output:   I_axis [cd] = outputWs * candelaPerWs * 2^(gain - losses)
- *   5. Falloff:  distance decay (virtual source) or area-light geometry
+ *   4. Output:   spot/area: I_axis [cd] = outputWs * candelaPerWs * 2^(gain - losses)
+ *                parabolic: energy-conserving, I = Φ / Ω_eff (resolveParabolicRig)
+ *   5. Falloff:  distance decay (virtual source), exact cone geometry (parabolic)
+ *                or area-light geometry
  *   6. Shadows:  apparent source size at the 3D subject distance (shadowModel.js)
  */
 import { LIGHT_MODELS } from '../config/equipmentConfig.js';
-import { FOCUS_ROD_LIMITS, RENDER_CONFIG } from '../config/sceneConfig.js';
+import { RENDER_CONFIG } from '../config/sceneConfig.js';
+import {
+  DEFAULT_BEAM_PROFILE,
+  effectiveSolidAngle,
+  evaluateBeamProfile,
+  isFlatProfile,
+  normalizeProfile,
+} from './beamProfile.js';
+import { focusRodToT } from './focusRod.js';
 import { clamp, lerp, powerLevelToWs } from './lightMath.js';
+import { parabolicHeadPositionM, reflectorGlowProfile } from './parabolicReflector.js';
 import { computeShadowParams } from './shadowModel.js';
+
+export { DEFAULT_BEAM_PROFILE };
 
 const DEG_TO_RAD = Math.PI / 180;
 /** three.js SpotLight angle must stay below 90°. */
@@ -23,18 +36,6 @@ const MIN_DECAY = 0.5;
 /** Fallback emitter size when a modifier defines neither diameter nor sourceDiameterM. */
 const DEFAULT_SOURCE_DIAMETER_M = 0.1;
 
-export const DEFAULT_BEAM_PROFILE = Object.freeze({
-  hotspotRadius: 1,
-  hotspotGain: 0,
-  centerDip: 0,
-  edgeStart: 1,
-});
-
-const normalizeProfile = (profile) => (profile ? { ...DEFAULT_BEAM_PROFILE, ...profile } : null);
-
-const isFlatProfile = (profile) =>
-  !profile || (profile.hotspotGain <= 0 && profile.centerDip <= 0 && profile.edgeStart >= 1);
-
 function lerpProfile(from, to, t) {
   const a = normalizeProfile(from) ?? DEFAULT_BEAM_PROFILE;
   const b = normalizeProfile(to) ?? DEFAULT_BEAM_PROFILE;
@@ -43,11 +44,6 @@ function lerpProfile(from, to, t) {
 
 const toSpotHalfAngle = (beamAngleDeg) =>
   Math.min((beamAngleDeg / 2) * DEG_TO_RAD, MAX_SPOT_HALF_ANGLE);
-
-/** Normalized focusing-rod position: 0 = spot, 1 = flood. */
-export const focusRodToT = (focusRod) =>
-  clamp(focusRod ?? FOCUS_ROD_LIMITS.default, FOCUS_ROD_LIMITS.min, FOCUS_ROD_LIMITS.max) /
-  FOCUS_ROD_LIMITS.max;
 
 // ---------------------------------------------------------------------------
 // Optics per light model
@@ -80,16 +76,17 @@ function readSpotOptics({ lighting, geometry }) {
 }
 
 /**
- * Parabolic focusing rod: every optical parameter is interpolated linearly
- * between the `spot` (rod = 0) and `flood` (rod = 100) calibration points.
+ * Parabolic focusing rod: the optical calibration points are interpolated
+ * linearly between `spot` (rod = 0, head pushed deep inside to the focal point)
+ * and `flood` (rod = 100, head pulled out towards the opening); head travel is
+ * parabolicHeadPositionM.
  *   t = rod / 100
  *   angle    = lerp(spot.angle,    flood.angle,    t)
- *   penumbra = lerp(spot.penumbra, flood.penumbra, t)
+ *   penumbra = lerp(spot.penumbra, flood.penumbra, t)       narrow edge -> wide
  *   D_eff    = diameter · lerp(spot.sourceSizeFraction, flood.sourceSizeFraction, t)
- * Focused, only a small hot area of the dish is lit (near point source, hard
- * shadows); flooded, the whole reflector glows (large source, soft shadows).
- * The spot end also adds on-axis gain (punch) and a collimated throw; the flood
- * end adds a center dip where the head and rod shadow the reflector apex.
+ *   profile  = lerp(spot.profile, flood.profile, t)          hot spot -> flattened
+ * Intensity is NOT interpolated: it follows from energy conservation in
+ * resolveParabolicRig, so the narrow, concentrated spot gets brighter by itself.
  */
 export function resolveParabolicOptics({ lighting, geometry }, focusRod) {
   const t = focusRodToT(focusRod);
@@ -98,8 +95,8 @@ export function resolveParabolicOptics({ lighting, geometry }, focusRod) {
   return {
     beamAngleDeg: mix('beamAngleDeg'),
     penumbra: mix('penumbra'),
-    centerGainStops: mix('centerGainStops'),
-    virtualSourceOffsetM: mix('virtualSourceOffsetM'),
+    centerGainStops: 0,
+    virtualSourceOffsetM: 0,
     sourceDiameterM: geometry.diameter * mix('sourceSizeFraction', 1),
     profile: lerpProfile(spot.profile, flood.profile, t),
     extraLossStops: 0,
@@ -257,6 +254,10 @@ export function resolveLightRig({
   const optics = applyGrid(applyInnerDiffuser(baseOptics, diffuser, getModifierDiameter(modifier)), grid);
 
   const lossStops = lighting.lightLossStops + optics.extraLossStops;
+  if (model === LIGHT_MODELS.PARABOLIC) {
+    return resolveParabolicRig({ modifier, optics, outputWs, lossStops, distance, focusRod });
+  }
+
   const onAxisCd =
     outputWs * RENDER_CONFIG.candelaPerWattSecond * 2 ** (optics.centerGainStops - lossStops);
   const falloff = computeDistanceFalloff(onAxisCd, distance, optics.virtualSourceOffsetM);
@@ -274,6 +275,9 @@ export function resolveLightRig({
       decay: falloff.decay,
       profile: isFlatProfile(optics.profile) ? null : optics.profile,
       shadow,
+      // SpotLight apex = fixture origin; rays helper starts at the modifier front.
+      apexOffsetM: 0,
+      exitDistanceM: modifier.geometry.depth ?? 0.03,
     },
     area: null,
     info: {
@@ -286,6 +290,105 @@ export function resolveLightRig({
       lossStops,
       sourceDiameterM: optics.sourceDiameterM,
       shadow,
+    },
+  };
+}
+
+/**
+ * Parabolic reflectors: exact cone geometry + energy conservation.
+ *
+ * Geometry — every reflected ray leaves the aperture (radius R at z = depth)
+ * within the half angle α, so the beam is the cone through the aperture rim
+ * whose apex sits behind it at
+ *   a = R / tan α                     (virtual apex, behind the aperture)
+ * The SpotLight is placed at that apex (apexOffsetM = depth − a along the beam
+ * axis, usually behind the fixture) with decay = 2. Its footprint then equals
+ * the real beam, 2·(R + d_ap·tan α), and its falloff is exactly the spreading of
+ * that cone: focused (α small, a large) -> collimated "throw"; flooded ->
+ * faster, but still flatter than a point source at the dish.
+ *
+ * Energy — the beam flux is fixed by the flash energy:
+ *   Φ = outputWs · candelaPerWs · Ω_ref · 2^(−losses)
+ *   I = Φ / Ω_eff,   Ω_eff = 2π ∫ A(θ) · M(θ) · sin θ dθ     (beamProfile.js)
+ * Spot: small α, hot-spot profile -> tiny Ω_eff -> high, punchy center intensity.
+ * Flood: wide α, flattened profile M ∝ 1/cos³θ (no center peaking on the
+ * subject plane) -> the same energy spread evenly.
+ *
+ * Shadows use the lit emitter size D_eff at the aperture-to-subject distance,
+ * while the shadow frustum spans the real beam at the apex-to-subject distance.
+ */
+function resolveParabolicRig({ modifier, optics, outputWs, lossStops, distance, focusRod }) {
+  const { geometry } = modifier;
+  const radius = geometry.diameter / 2;
+  const angle = toSpotHalfAngle(optics.beamAngleDeg);
+  const penumbra = clamp(optics.penumbra, 0, 1);
+
+  // Flatten over the three.js plateau (inner cone), or up to a grid's edge cut.
+  const baseProfile = optics.profile ?? normalizeProfile({});
+  const profile = {
+    ...baseProfile,
+    flattenEdge: Math.min(1 - penumbra, baseProfile.edgeStart),
+  };
+
+  const apexBehindApertureM = radius / Math.tan(angle);
+  const apexOffsetM = geometry.depth - apexBehindApertureM;
+  const apexToSubjectM = Math.max(distance - apexOffsetM, 0.1);
+  const apertureToSubjectM = Math.max(distance - geometry.depth, 0.05);
+
+  const solidAngleSr = effectiveSolidAngle(profile, angle, penumbra);
+  const fluxAtReference =
+    outputWs *
+    RENDER_CONFIG.candelaPerWattSecond *
+    RENDER_CONFIG.referenceBeamSolidAngleSr *
+    2 ** -lossStops;
+  const intensity = fluxAtReference / solidAngleSr;
+  const centerValue = evaluateBeamProfile(profile, 0, angle);
+  const onAxisCd = intensity * centerValue;
+
+  const shadow = computeShadowParams({
+    sourceDiameterM: optics.sourceDiameterM,
+    distance: apertureToSubjectM,
+    halfAngle: angle,
+    frustumDistance: apexToSubjectM,
+  });
+  const headZ = parabolicHeadPositionM(geometry, focusRod);
+
+  return {
+    model: LIGHT_MODELS.PARABOLIC,
+    outputWs,
+    onAxisCd,
+    spot: {
+      intensity,
+      angle,
+      penumbra,
+      decay: 2,
+      profile: isFlatProfile(profile) ? null : profile,
+      shadow,
+      apexOffsetM,
+      // Rays helper: the beam leaves the dish at the aperture plane.
+      exitDistanceM: apexBehindApertureM,
+    },
+    area: null,
+    info: {
+      distance,
+      beamAngleDeg: optics.beamAngleDeg,
+      penumbra,
+      // Local falloff exponent vs. fixture distance: E ∝ 1/(d − apexOffset)².
+      decay: (2 * distance) / apexToSubjectM,
+      footprintM: 2 * apexToSubjectM * Math.tan(angle),
+      // Center concentration vs. a flat 1 sr reference beam (energy conserving).
+      gainStops: Math.log2((RENDER_CONFIG.referenceBeamSolidAngleSr * centerValue) / solidAngleSr),
+      lossStops,
+      sourceDiameterM: optics.sourceDiameterM,
+      shadow,
+      parabolic: {
+        headZ,
+        headDepthFraction: headZ / geometry.depth,
+        apexBehindApertureM,
+        solidAngleSr,
+        flatten: profile.flatten,
+        glowCoverage: reflectorGlowProfile(geometry, headZ, []).coverage,
+      },
     },
   };
 }
@@ -324,6 +427,8 @@ function resolveAreaRig({ modifier, outputWs, distance }) {
             decay: 2,
             profile: null,
             shadow,
+            apexOffsetM: 0,
+            exitDistanceM: geometry.depth ?? 0,
           }
         : null,
     area: {

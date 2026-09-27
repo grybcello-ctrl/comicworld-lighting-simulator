@@ -1,6 +1,16 @@
-import { useMemo } from 'react';
-import { DoubleSide, Vector2 } from 'three';
-import { FOCUS_ROD_LIMITS } from '../../../config/sceneConfig.js';
+import { useLayoutEffect, useMemo } from 'react';
+import {
+  AdditiveBlending,
+  BackSide,
+  BufferAttribute,
+  Color,
+  DoubleSide,
+  FrontSide,
+  LatheGeometry,
+  Vector2,
+} from 'three';
+import { FOCUS_ROD_LIMITS, PARABOLIC_CONFIG } from '../../../config/sceneConfig.js';
+import { parabolicHeadPositionM, reflectorGlowProfile } from '../../../utils/parabolicReflector.js';
 
 /**
  * Modifier renderers. Same convention as strobe bodies: the mount is at the
@@ -63,10 +73,78 @@ export function ReflectorMesh({ geometry, isLit, emitColor, grid }) {
   );
 }
 
+/** Rod length behind the head; it passes through the apex like a focusing tube. */
+const FOCUS_ROD_EXTRA_LENGTH_M = 0.3;
+
+/**
+ * Fake global illumination for the dish interior: an additive, vertex-colored
+ * copy of the reflector surface whose brightness is the irradiance the
+ * rear-firing head puts on each ring of the dish (parabolicReflector.js).
+ * Head deep inside (spot) -> the glow pools around the apex; head pulled out
+ * (flood) -> the whole silver interior glows evenly. Unlit material: it never
+ * adds light to the scene, so it can't change the real lighting.
+ */
+function ReflectorGlow({ geometry, profilePoints, segments, headZ, emitColor }) {
+  const glowGeometry = useMemo(() => {
+    const lathe = new LatheGeometry(profilePoints, segments);
+    lathe.setAttribute(
+      'color',
+      new BufferAttribute(new Float32Array(lathe.attributes.position.count * 3), 3),
+    );
+    return lathe;
+  }, [profilePoints, segments]);
+
+  useLayoutEffect(() => () => glowGeometry.dispose(), [glowGeometry]);
+
+  // Re-shade whenever the head moves along the rod or the light color changes.
+  useLayoutEffect(() => {
+    const { values } = reflectorGlowProfile(
+      geometry,
+      headZ,
+      profilePoints.map((point) => point.x),
+    );
+    const colors = glowGeometry.attributes.color.array;
+    const tint = new Color(emitColor ?? '#ffffff');
+    const pointsPerMeridian = profilePoints.length;
+    // LatheGeometry vertex order: for each segment i, for each profile point j.
+    for (let v = 0; v < glowGeometry.attributes.color.count; v++) {
+      const brightness = values[v % pointsPerMeridian] * PARABOLIC_CONFIG.glowIntensity;
+      colors[v * 3] = tint.r * brightness;
+      colors[v * 3 + 1] = tint.g * brightness;
+      colors[v * 3 + 2] = tint.b * brightness;
+    }
+    glowGeometry.attributes.color.needsUpdate = true;
+  }, [glowGeometry, geometry, headZ, emitColor, profilePoints]);
+
+  return (
+    <mesh geometry={glowGeometry} rotation={[HALF_PI, 0, 0]} raycast={() => null}>
+      <meshBasicMaterial
+        vertexColors
+        transparent
+        opacity={PARABOLIC_CONFIG.glowOpacity}
+        blending={AdditiveBlending}
+        depthWrite={false}
+        // LatheGeometry front faces point outwards: the concave interior is the
+        // back face, so the glow never shows on the outside of the dish.
+        side={BackSide}
+        toneMapped={false}
+        // Pull the glow in front of the coplanar dish surface (no z-fighting).
+        polygonOffset
+        polygonOffsetFactor={-1}
+        polygonOffsetUnits={-4}
+      />
+    </mesh>
+  );
+}
+
 /**
  * Deep faceted parabola z = depth * (ρ / R)^2 opening towards +Z, with the
- * focusing rod on the axis. The flash head slides from the focal point
- * (rod = 0, focused) back towards the apex (rod = 100, flooded).
+ * focusing rod on the axis. The rear-firing flash tube (and the strobe body,
+ * rendered by StudioLight on the same rod) slides along Z:
+ *   rod 0   -> pushed deep inside to the focal point (focused: narrow, hard)
+ *   rod 100 -> pulled out towards the opening      (flooded: wide, soft)
+ * See parabolicHeadPositionM. The rod keeps its length, so it sticks out
+ * further behind the dish when the head is pushed in.
  */
 export function ParabolicMesh({
   geometry,
@@ -76,48 +154,65 @@ export function ParabolicMesh({
   innerDiffuser,
   focusRod = FOCUS_ROD_LIMITS.default,
 }) {
-  const { diameter, depth, segments = 24, color } = geometry;
+  const { diameter, depth, segments = 24, color, exteriorColor = '#161616' } = geometry;
   const radius = diameter / 2;
-  const focalLength = radius ** 2 / (4 * depth);
 
+  // Closed at the apex (ρ = 0), so the glowing interior never shows through.
   const profilePoints = useMemo(() => {
     const steps = 16;
     return Array.from({ length: steps + 1 }, (_, i) => {
-      const rho = Math.max((radius * i) / steps, 0.02);
+      const rho = (radius * i) / steps;
       return new Vector2(rho, depth * (rho / radius) ** 2);
     });
   }, [radius, depth]);
 
-  const t = focusRod / FOCUS_ROD_LIMITS.max;
-  const headZ = Math.min(focalLength, depth) * (1 - 0.8 * t);
+  const headZ = parabolicHeadPositionM(geometry, focusRod);
+  const rodLength = depth * PARABOLIC_CONFIG.headMaxDepthFraction + FOCUS_ROD_EXTRA_LENGTH_M;
+
+  // Inner diffuser: a disc between the rear-firing tube and the dish, scattering
+  // the light before it hits the reflector. Clamped to fit inside the dish wall.
+  const diffuserZ = Math.max(headZ - 0.06, 0.015);
+  const diffuserRadius = innerDiffuser
+    ? Math.min(radius * innerDiffuser.geometry.radiusFraction, radius * Math.sqrt(diffuserZ / depth) * 0.9)
+    : 0;
 
   return (
     <group>
-      {/* Lathe revolves around +Y; rotate so +Y maps to +Z. */}
+      {/* Lathe revolves around +Y; rotate so +Y maps to +Z. Front faces point
+          outwards: the silver interior is the back face, the black fabric
+          exterior the front face. The exterior is unlit because this light's
+          SpotLight sits at its virtual apex behind the dish and would otherwise
+          light the back of its own reflector. */}
       <mesh rotation={[HALF_PI, 0, 0]}>
         <latheGeometry args={[profilePoints, segments]} />
-        <meshStandardMaterial
-          color={color}
-          metalness={0.7}
-          roughness={0.3}
-          flatShading
-          side={DoubleSide}
-        />
+        <meshStandardMaterial color={color} metalness={0.7} roughness={0.3} flatShading side={BackSide} />
       </mesh>
-      {/* Focusing rod */}
-      <mesh position={[0, 0, depth / 2]} rotation={[HALF_PI, 0, 0]}>
-        <cylinderGeometry args={[0.012, 0.012, depth, 8]} />
+      <mesh rotation={[HALF_PI, 0, 0]}>
+        <latheGeometry args={[profilePoints, segments]} />
+        <meshBasicMaterial color={exteriorColor} side={FrontSide} />
+      </mesh>
+      {isLit && (
+        <ReflectorGlow
+          geometry={geometry}
+          profilePoints={profilePoints}
+          segments={segments}
+          headZ={headZ}
+          emitColor={emitColor}
+        />
+      )}
+      {/* Focusing rod: ends at the head, slides through the apex. */}
+      <mesh position={[0, 0, headZ - rodLength / 2]} rotation={[HALF_PI, 0, 0]}>
+        <cylinderGeometry args={[0.012, 0.012, rodLength, 8]} />
         <meshStandardMaterial color="#303030" metalness={0.6} roughness={0.4} />
       </mesh>
-      {/* Flash head on the rod */}
+      {/* Flash tube (fires back into the dish) */}
       <mesh position={[0, 0, headZ]}>
         <sphereGeometry args={[0.035, 16, 16]} />
         <EmitterMaterial isLit={isLit} color={emitColor} />
       </mesh>
       {innerDiffuser && (
-        // Diffusion disc just in front of the head; glows when the strobe fires.
-        <mesh position={[0, 0, Math.min(headZ + 0.08, depth * 0.9)]}>
-          <circleGeometry args={[radius * innerDiffuser.geometry.radiusFraction, 32]} />
+        <mesh position={[0, 0, diffuserZ]}>
+          <circleGeometry args={[diffuserRadius, 32]} />
           <EmitterMaterial isLit={isLit} color={isLit ? emitColor : innerDiffuser.geometry.color} />
         </mesh>
       )}

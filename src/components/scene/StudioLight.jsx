@@ -1,9 +1,17 @@
 import { useThree } from '@react-three/fiber';
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import { Color, LinearSRGBColorSpace, Object3D } from 'three';
+import { LIGHT_MODELS } from '../../config/equipmentConfig.js';
 import { getGridById, getModifierById, getStrobeById } from '../../config/equipmentRegistry.js';
-import { selectFixturePose, selectLightColor, selectLightRig } from '../../state/lightSelectors.js';
+import {
+  selectFixturePose,
+  selectLightColor,
+  selectLightRig,
+  selectSpotPosition,
+} from '../../state/lightSelectors.js';
 import { getBeamProfileTexture } from '../../utils/beamProfileTexture.js';
+import { parabolicHeadPositionM } from '../../utils/parabolicReflector.js';
+import { BeamRaysHelper } from './BeamRaysHelper.jsx';
 import { MODIFIER_RENDERERS, resolveRenderer, STROBE_BODY_RENDERERS } from './fixtures/index.js';
 
 /** Simple vertical stand from the floor up to the fixture. */
@@ -51,11 +59,12 @@ function useOnDemandShadow(lightRef, { mapSize, deps }) {
  * Renders one LightInstance: stand, strobe body, modifier, and the three.js
  * lights produced by `selectLightRig` (SpotLight and/or RectAreaLight).
  *
- * `showFixture = false` hides only the meshes (stand, body, modifier). The
- * lights are deliberately kept *outside* the hidden groups: three.js skips the
- * children of invisible objects, lights included.
+ * `showFixture = false` hides only the meshes (stand, body, modifier, the
+ * reflector glow) and the light-ray helper. The lights are deliberately kept
+ * *outside* the hidden groups: three.js skips the children of invisible
+ * objects, lights included. Neither the glow nor the helper emits light.
  */
-export function StudioLight({ light, isSelected, showFixture = true, onSelect }) {
+export function StudioLight({ light, isSelected, showFixture = true, showLightRays = false, onSelect }) {
   const strobe = getStrobeById(light.strobeId);
   const modifier = getModifierById(light.modifierId);
   const grid = getGridById(light.gridId);
@@ -79,9 +88,19 @@ export function StudioLight({ light, isSelected, showFixture = true, onSelect })
 
   const spot = rig?.spot;
   const shadow = spot?.shadow;
+  // Parabolics: SpotLight at the virtual apex on the beam axis (beamModel.js).
+  const spotPosition = useMemo(() => selectSpotPosition(pose, spot), [pose, spot]);
   useOnDemandShadow(spotRef, {
     mapSize: shadow?.mapSize ?? 0,
-    deps: [Boolean(spot), pose, spot?.angle, shadow?.cameraNear, shadow?.cameraFar, light.enabled],
+    deps: [
+      Boolean(spot),
+      pose,
+      spot?.angle,
+      spot?.apexOffsetM,
+      shadow?.cameraNear,
+      shadow?.cameraFar,
+      light.enabled,
+    ],
   });
 
   const beamMap = spot ? getBeamProfileTexture(spot.profile, spot.angle) : null;
@@ -91,6 +110,12 @@ export function StudioLight({ light, isSelected, showFixture = true, onSelect })
   const BodyRenderer = resolveRenderer(STROBE_BODY_RENDERERS, strobe.body.shape, 'cylinder');
   const ModifierRenderer = resolveRenderer(MODIFIER_RENDERERS, modifier.geometry.shape, 'none');
   const innerDiffuser = light.innerDiffuser ? modifier.accessories?.innerDiffuser : null;
+  // Parabolics: the strobe rides on the focusing rod, firing back into the dish
+  // (rotated 180° about Y so its tube faces the apex and its body the opening).
+  const isParabolic = modifier.lighting.model === LIGHT_MODELS.PARABOLIC;
+  const bodyTransform = isParabolic
+    ? { position: [0, 0, parabolicHeadPositionM(modifier.geometry, light.focusRod)], rotation: [0, Math.PI, 0] }
+    : { position: [0, 0, 0], rotation: [0, 0, 0] };
   const handleClick = (event) => {
     event.stopPropagation();
     onSelect(light.id);
@@ -109,7 +134,11 @@ export function StudioLight({ light, isSelected, showFixture = true, onSelect })
         onClick={showFixture ? handleClick : undefined}
       >
         <group visible={showFixture}>
-          {BodyRenderer && <BodyRenderer body={strobe.body} isSelected={isSelected} />}
+          {BodyRenderer && (
+            <group {...bodyTransform}>
+              <BodyRenderer body={strobe.body} isSelected={isSelected} />
+            </group>
+          )}
           {ModifierRenderer && (
             <ModifierRenderer
               geometry={modifier.geometry}
@@ -140,7 +169,7 @@ export function StudioLight({ light, isSelected, showFixture = true, onSelect })
       {spot && (
         <spotLight
           ref={spotRef}
-          position={pose.position}
+          position={spotPosition}
           target={target}
           visible={light.enabled}
           intensity={spot.intensity}
@@ -159,6 +188,16 @@ export function StudioLight({ light, isSelected, showFixture = true, onSelect })
           shadow-normalBias={shadow.normalBias}
           shadow-camera-near={shadow.cameraNear}
           shadow-camera-far={shadow.cameraFar}
+        />
+      )}
+      {spot && (
+        <BeamRaysHelper
+          lightRef={spotRef}
+          // Hidden together with the fixtures; never shown for a light that is off.
+          visible={showLightRays && showFixture && light.enabled}
+          color={emitColor}
+          startDistance={spot.exitDistanceM}
+          emphasized={isSelected}
         />
       )}
     </group>

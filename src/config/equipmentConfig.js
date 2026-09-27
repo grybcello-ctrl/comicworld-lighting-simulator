@@ -179,8 +179,9 @@ export const STROBES = [
  * @typedef {Object} BeamProfile
  * @property {number} [hotspotRadius=1]  Width of the hot center (fraction of the cone).
  * @property {number} [hotspotGain=0]    0 = flat beam, 1 = all energy in the hot spot.
- * @property {number} [centerDip=0]      Center loss, e.g. head/rod shadowing the reflector apex.
+ * @property {number} [centerDip=0]      Center loss, e.g. a flooded parabolic's head blocking the beam center.
  * @property {number} [edgeStart=1]      Where the extra edge cut begins (< 1 = harder edge).
+ * @property {number} [flatten=0]        0..1, cancels the cos³θ center peak on the subject plane.
  */
 
 /**
@@ -210,8 +211,10 @@ export const STROBES = [
  * @property {string} [lighting.model='spot']   One of LIGHT_MODELS.
  * @property {number} lighting.lightLossStops   Output loss caused by the modifier.
  * spot:      BeamOptics fields directly on `lighting`.
- * parabolic: `lighting.focus = { spot: BeamOptics, flood: BeamOptics }`
- *            (focusing rod 0 = spot, 100 = flood, linear in between).
+ * parabolic: `lighting.focus = { spot, flood }` with beamAngleDeg, penumbra,
+ *            sourceSizeFraction and profile (focusing rod 0 = spot, 100 = flood,
+ *            linear in between). Center gain and throw are NOT configured: they
+ *            follow from energy conservation and the dish geometry (beamModel.js).
  * area:      emitter size is derived from `geometry`; beamAngleDeg/penumbra
  *            configure the soft shadow proxy.
  * @property {string[]} [gridIds]        GRIDS that can be fitted to this modifier.
@@ -244,23 +247,21 @@ export const MODIFIERS = [
       model: LIGHT_MODELS.PARABOLIC,
       lightLossStops: 0.3, // highly reflective textile
       focus: {
-        // Head at the focal point: near-collimated, punchy, crisp speculars.
+        // Rod 0 — head pushed deep inside to the focal point: near-collimated,
+        // tight edge, strong hot spot, point-like (hard) shadows.
         spot: {
           beamAngleDeg: 16,
-          penumbra: 0.15,
-          centerGainStops: 1.5,
-          virtualSourceOffsetM: 1.2,
+          penumbra: 0.12,
           sourceSizeFraction: 0.1, // only a small hot area of the dish is lit
-          profile: { hotspotRadius: 0.35, hotspotGain: 0.8, centerDip: 0 },
+          profile: { hotspotRadius: 0.4, hotspotGain: 0.7, centerDip: 0, flatten: 0 },
         },
-        // Head pulled back to the apex: wide, enveloping light, center shadowed by the head.
+        // Rod 100 — head pulled out towards the opening: the whole dish acts as a
+        // large source. No hot spot; the center peak is flattened (see beamProfile.js).
         flood: {
           beamAngleDeg: 72,
-          penumbra: 0.75,
-          centerGainStops: 0,
-          virtualSourceOffsetM: 0.15,
+          penumbra: 0.45,
           sourceSizeFraction: 1, // the whole reflector glows
-          profile: { hotspotRadius: 0.9, hotspotGain: 0.3, centerDip: 0.25 },
+          profile: { hotspotRadius: 1, hotspotGain: 0, centerDip: 0.08, flatten: 1 },
         },
       },
     },
@@ -276,22 +277,20 @@ export const MODIFIERS = [
       model: LIGHT_MODELS.PARABOLIC,
       lightLossStops: 0.4,
       focus: {
+        // Rod 0 — head pushed deep inside to the focal point: narrow, punchy, hard.
         spot: {
           beamAngleDeg: 12,
-          penumbra: 0.12,
-          centerGainStops: 1.7,
-          virtualSourceOffsetM: 0.9,
+          penumbra: 0.1,
           sourceSizeFraction: 0.12, // only a small hot area of the dish is lit
-          profile: { hotspotRadius: 0.3, hotspotGain: 0.85, centerDip: 0 },
+          profile: { hotspotRadius: 0.4, hotspotGain: 0.75, centerDip: 0, flatten: 0 },
         },
-        // Deep dish: stronger head occlusion when flooded.
+        // Rod 100 — head pulled out towards the opening: the silver interior glows
+        // evenly and acts as one large source; center peak flattened.
         flood: {
           beamAngleDeg: 60,
-          penumbra: 0.7,
-          centerGainStops: 0,
-          virtualSourceOffsetM: 0.1,
+          penumbra: 0.4,
           sourceSizeFraction: 1, // the whole reflector glows
-          profile: { hotspotRadius: 0.85, hotspotGain: 0.35, centerDip: 0.3 },
+          profile: { hotspotRadius: 1, hotspotGain: 0, centerDip: 0.08, flatten: 1 },
         },
       },
     },

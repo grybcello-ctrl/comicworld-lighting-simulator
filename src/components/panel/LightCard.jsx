@@ -68,7 +68,12 @@ function BeamReadout({ rig, pose }) {
     { label: 'Beam angle', value: `${info.beamAngleDeg.toFixed(1)}°` },
     { label: 'Penumbra (edge)', value: info.penumbra.toFixed(2) },
     {
-      label: rig.model === LIGHT_MODELS.AREA ? 'Falloff exponent (near field)' : 'Decay',
+      label:
+        rig.model === LIGHT_MODELS.AREA
+          ? 'Falloff exponent (near field)'
+          : rig.model === LIGHT_MODELS.PARABOLIC
+            ? 'Falloff exponent (vs. distance)'
+            : 'Decay',
       value: info.decay.toFixed(2),
     },
     { label: 'Footprint at subject', value: `Ø ${info.footprintM.toFixed(2)} m` },
@@ -83,6 +88,20 @@ function BeamReadout({ rig, pose }) {
   ];
   if (info.emitterAreaM2) {
     items.push({ label: 'Emitting area', value: `${info.emitterAreaM2.toFixed(3)} m²` });
+  }
+  if (info.parabolic) {
+    const { headZ, headDepthFraction, apexBehindApertureM, solidAngleSr, flatten, glowCoverage } =
+      info.parabolic;
+    items.push(
+      {
+        label: 'Head on rod (from apex)',
+        value: `${formatCm(headZ)} · ${(headDepthFraction * 100).toFixed(0)}% of depth`,
+      },
+      { label: 'Lit dish area (glow)', value: `${(glowCoverage * 100).toFixed(0)} %` },
+      { label: 'Beam solid angle Ω', value: `${solidAngleSr.toFixed(3)} sr` },
+      { label: 'Center flattening', value: `${(flatten * 100).toFixed(0)} %` },
+      { label: 'Virtual apex behind dish', value: formatMeters(apexBehindApertureM) },
+    );
   }
   return <ReadoutList items={items} />;
 }
@@ -290,7 +309,7 @@ export function LightCard({ light, isSelected }) {
               max={FOCUS_ROD_LIMITS.max}
               step={FOCUS_ROD_LIMITS.step}
               onChange={(focusRod) => update({ focusRod })}
-              hint="0 = spot (small source, hard shadows) · 100 = flood (whole dish glows, soft shadows)"
+              hint="0 = head pushed deep inside (spot: narrow, punchy, hard) · 100 = head pulled out (flood: wide, flat, soft)"
             />
           )}
 

@@ -397,3 +397,11 @@ body,
   overflow: hidden;
   clip: rect(0 0 0 0);
 }
+
+/* ---------- Light rays toggle ---------- */
+.light-rays-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}

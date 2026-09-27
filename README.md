@@ -28,6 +28,8 @@ src/
 │  ├─ gelFilters.js           # Gel transmission curves T(λ)
 │  ├─ colorTemperature.js     # Kelvin × gel → three.js light color
 │  ├─ shadowModel.js          # Apparent-size shadows → shadow.radius / map size
+│  ├─ beamProfile.js          # Beam profile, flattening, energy (effective solid angle)
+│  ├─ parabolicReflector.js   # Focusing-rod head travel, dish irradiance (glow)
 │  ├─ skinTexture.js          # Procedural skin normal + roughness maps
 │  └─ skinMaterial.js         # PBR skin materials for the mannequin
 └─ components/
@@ -85,3 +87,24 @@ Light instances only store `strobeId` / `modifierId`, and the specs are always r
   - Each light's shadow map is re-rendered only when that light's pose, cone or map size changes.
   - Each shadow map is sized to fit its beam's footprint.
 - **JSON:** Export / Import saves and restores every light setting. Imported files go through the same validation as lights created in the UI, and any changes are reported in the panel.
+
+## Phase 5 — parabolics and light rays
+
+- **Focusing rod:** the rear-firing strobe slides along the dish axis.
+  - Rod 0 pushes the head deep inside to the focal point `f = R²/4·depth`.
+  - Rod 100 pulls the head out to 90 % of the dish depth.
+  - The strobe body rides on the rod; at rod 100 it sticks out of the front of the dish.
+- **Beam geometry:** the SpotLight sits at the beam's virtual apex, `a = R / tan α` behind the aperture, with `decay = 2`.
+  - This makes the footprint match the real beam (spot: collimated, about as wide as the dish; flood: a widening cone).
+  - It also produces the collimated "throw" of a focused parabolic.
+- **Energy:** `I = Φ / Ω_eff`, where Φ is fixed by the flash energy and `Ω_eff = 2π∫A·M·sinθ dθ`.
+  - In spot, the narrow cone and hot spot give a small Ω_eff, so the center is punchy: about +2.5 EV over flood at 1.4 m for the 35D.
+  - In flood, the beam profile cancels the `cos³θ` center peak of a point source (`M ∝ 1/cos³θ`), so the subject plane is lit evenly.
+- **Shadows:** the effective emitter size grows with the rod, so `shadow.radius` rises monotonically from spot to flood. The penumbra is computed at the aperture-to-subject distance.
+- **Fake GI:** an additive, vertex-colored layer on the dish interior shows the head's irradiance on the dish (inverse square × incidence × emission pattern).
+  - Spot: the light pools near the apex (about 2 % of the dish is lit).
+  - Flood: the whole interior glows evenly (about 77 %).
+  - The layer uses an unlit material, so it adds no light to the scene.
+- **Show Light Rays:** draws each light's beam from the modifier exit to the subject: rays, the footprint ring, the full-intensity core ring and the beam axis.
+  - It reads the live SpotLight in `useFrame`, so rod, tilt and shift changes show up in the same frame.
+  - It is hidden together with the fixtures and never casts shadows or catches clicks.

@@ -1,7 +1,8 @@
 /**
  * Generates SpotLight `map` textures that encode an angular beam profile
- * (hot center, center dip, hard edge). three.js projects the map through the
- * spot's shadow camera (fov = 2 * angle), so the texture edge = cone edge.
+ * (hot center, center dip, hard edge, flattening — see beamProfile.js).
+ * three.js projects the map through the spot's shadow camera (fov = 2 * angle)
+ * and multiplies the light color by it, so the texture edge = cone edge.
  */
 import {
   ClampToEdgeWrapping,
@@ -12,23 +13,12 @@ import {
   UnsignedByteType,
 } from 'three';
 import { RENDER_CONFIG } from '../config/sceneConfig.js';
-import { smoothstep } from './lightMath.js';
+import { evaluateBeamProfile } from './beamProfile.js';
 
-/** Radius (fraction of the cone) of the shadow cast by the head/rod on the axis. */
-const CENTER_DIP_RADIUS = 0.2;
 const MAX_CACHED_TEXTURES = 64;
 
-/**
- * Relative intensity at normalized angle r = θ / halfAngle (0..1). Always <= 1.
- * @param {import('../config/equipmentConfig.js').BeamProfile} profile (normalized)
- */
-export function evaluateBeamProfile(profile, r) {
-  const { hotspotRadius, hotspotGain, centerDip, edgeStart } = profile;
-  const hotspot = 1 - hotspotGain + hotspotGain * Math.exp(-((r / Math.max(hotspotRadius, 1e-3)) ** 2));
-  const dip = 1 - centerDip * Math.exp(-((r / CENTER_DIP_RADIUS) ** 2));
-  const edge = 1 - smoothstep(edgeStart, 1, r);
-  return hotspot * dip * edge;
-}
+// Kept for existing imports.
+export { evaluateBeamProfile };
 
 function buildTexture(profile, halfAngle, size) {
   const data = new Uint8Array(size * size * 4);
@@ -43,7 +33,7 @@ function buildTexture(profile, halfAngle, size) {
       if (planarRadius <= 1) {
         // Convert planar projection radius back to an angular fraction.
         const theta = Math.atan(planarRadius * tanHalfAngle);
-        value = evaluateBeamProfile(profile, theta / halfAngle);
+        value = evaluateBeamProfile(profile, theta / halfAngle, halfAngle);
       }
       const byte = Math.round(value * 255);
       const offset = (y * size + x) * 4;
@@ -74,6 +64,8 @@ const cacheKey = (profile, halfAngle) =>
     profile.hotspotGain,
     profile.centerDip,
     profile.edgeStart,
+    profile.flatten,
+    profile.flattenEdge,
     halfAngle,
   ]
     .map((value) => value.toFixed(3))
