@@ -136,3 +136,24 @@ export const LIGHT_RAYS_CONFIG = Object.freeze({
   fillOpacity: 0.07,
   renderOrder: 20,
 });
+
+
+/**
+ * Subject (what the lights illuminate). All lights aim at SUBJECT_TARGET, so a
+ * custom model is fitted to the mannequin's height and footprint origin.
+ */
+export const SUBJECT_TYPES = Object.freeze({
+  MANNEQUIN: 'mannequin',
+  CUSTOM: 'custom',
+});
+
+export const SUBJECT_CONFIG = Object.freeze({
+  // Mannequin height: head center 1.62 m + head radius 0.105 m; feet at y = 0.
+  mannequinHeightM: 1.725,
+  // Custom models are scaled so their bounding-box height equals this.
+  targetHeightM: 1.725,
+  // Selectable in the file input; exactly one model file per upload.
+  modelExtensions: ['.glb', '.gltf'],
+  // Extra files a .gltf may reference (external buffers / textures).
+  companionExtensions: ['.bin', '.png', '.jpg', '.jpeg', '.webp', '.ktx2'],
+});

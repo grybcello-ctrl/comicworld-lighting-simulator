@@ -4,6 +4,7 @@ import { useLightingActions, useLightingState } from '../../state/LightingContex
 import { AddLightForm } from './AddLightForm.jsx';
 import { LightCard } from './LightCard.jsx';
 import { SetupFileControls } from './SetupFileControls.jsx';
+import { SubjectSelector } from './SubjectSelector.jsx';
 import { ToggleField } from './fields.jsx';
 
 function PresetPicker() {
@@ -95,6 +96,7 @@ export function ControlPanel() {
       <header className="control-panel__header">
         <h1>Studio Lighting</h1>
         <p>Drag to orbit · Scroll to zoom · Click a light to select it</p>
+        <SubjectSelector />
         <FixtureVisibilityToggle />
         <LightRaysToggle />
         <CameraViewButtons />
