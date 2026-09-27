@@ -1,0 +1,240 @@
+:root {
+  --color-bg: #121214;
+  --color-surface: #1c1c20;
+  --color-surface-raised: #25252b;
+  --color-border: #34343c;
+  --color-text: #e6e6ea;
+  --color-text-muted: #8d8d98;
+  --color-accent: #3a6df0;
+  --color-danger: #e0524f;
+  --color-light-on: #ffd166;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+/* ---------- Layout: 70% viewport / 30% panel ---------- */
+.app-layout {
+  display: grid;
+  grid-template-columns: 7fr 3fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-layout__viewport {
+  position: relative;
+  min-width: 0;
+}
+
+.app-layout__panel {
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+
+/* ---------- Panel ---------- */
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+}
+
+.control-panel__header h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.control-panel__header p {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.panel-section__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.empty-state {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* ---------- Fields ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.field__row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.field__label {
+  color: var(--color-text-muted);
+}
+
+.field__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.field select,
+.text-input {
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.field input[type='range'] {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* ---------- Buttons ---------- */
+.button {
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--color-accent);
+}
+
+.button--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.button--danger {
+  color: var(--color-danger);
+  background: transparent;
+  border-color: var(--color-danger);
+}
+
+/* ---------- Light cards ---------- */
+.light-card {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.light-card--selected {
+  border-color: var(--color-accent);
+}
+
+.light-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.light-card__dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-border);
+}
+
+.light-card__dot--on {
+  background: var(--color-light-on);
+  box-shadow: 0 0 6px var(--color-light-on);
+}
+
+.light-card__titles {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.light-card__titles small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
+.light-card__power {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.light-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.light-card__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.light-card__subtitle {
+  margin: 6px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
