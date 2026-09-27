@@ -37,6 +37,16 @@ export function selectLightColor(light) {
 export const selectFixturePose = (light) =>
   computeFixturePose(light.placement, SUBJECT_TARGET, { minHeight: MIN_FIXTURE_HEIGHT_M });
 
+/**
+ * World position of the SpotLight: the fixture origin moved `apexOffsetM` along
+ * the beam axis (parabolics sit at their virtual apex, usually behind the dish).
+ */
+export function selectSpotPosition(pose, spot) {
+  const offset = spot?.apexOffsetM ?? 0;
+  const scale = offset / pose.distanceToSubject;
+  return pose.position.map((value, i) => value + (pose.aimPoint[i] - value) * scale);
+}
+
 /** Light rig at the fixture's real 3D distance to the subject (shift included). */
 export function selectLightRig(light, pose = selectFixturePose(light)) {
   const strobe = getStrobeById(light.strobeId);

@@ -4,6 +4,7 @@ import { useLightingActions, useLightingState } from '../../state/LightingContex
 import { AddLightForm } from './AddLightForm.jsx';
 import { LightCard } from './LightCard.jsx';
 import { SetupFileControls } from './SetupFileControls.jsx';
+import { ToggleField } from './fields.jsx';
 
 function PresetPicker() {
   const { loadPreset } = useLightingActions();
@@ -44,6 +45,28 @@ function FixtureVisibilityToggle() {
   );
 }
 
+/**
+ * Beam cone helpers. Purely visual: drawn only while fixtures are shown, so
+ * 'Hide Fixtures' also removes them; the lights are never affected.
+ */
+function LightRaysToggle() {
+  const { showLightRays, showFixtures } = useLightingState();
+  const { setShowLightRays } = useLightingActions();
+  return (
+    <div className="light-rays-toggle">
+      <ToggleField
+        label="Show Light Rays (빛 퍼짐 범위)"
+        checked={showLightRays}
+        onChange={setShowLightRays}
+        title="Draws each light's beam cone: angle, full-intensity core and footprint at the subject."
+      />
+      {showLightRays && !showFixtures && (
+        <span className="field__hint">Hidden while fixtures are hidden — show fixtures to see the rays.</span>
+      )}
+    </div>
+  );
+}
+
 /** Camera framings; the face close-up is for inspecting skin texture. */
 function CameraViewButtons() {
   const { cameraView } = useLightingState();
@@ -73,6 +96,7 @@ export function ControlPanel() {
         <h1>Studio Lighting</h1>
         <p>Drag to orbit · Scroll to zoom · Click a light to select it</p>
         <FixtureVisibilityToggle />
+        <LightRaysToggle />
         <CameraViewButtons />
       </header>
 

@@ -34,6 +34,10 @@ export const RENDER_CONFIG = Object.freeze({
   areaShadowProxyShare: 0.3,
   // Resolution of the generated SpotLight beam-profile textures.
   beamProfileTextureSize: 128,
+  // Energy-conserving beams (parabolics): flux Φ = Ws · candelaPerWattSecond · Ω_ref.
+  // A flat beam spanning Ω_ref steradians therefore has the same on-axis
+  // intensity as the Phase 2 calibration (Ω = 1 sr ≈ 32.8° half angle).
+  referenceBeamSolidAngleSr: 1,
   ambientIntensity: 0.15,
   backgroundColor: '#1a1a1d',
 });
@@ -54,8 +58,9 @@ export const SHADOW_CONFIG = Object.freeze({
   maxMapSize: 2048,
   mapSizeStep: 64,
   minRadius: 0.5,
-  // r186's PCF uses 5 Vogel taps; beyond ~12 texels the blur turns grainy.
-  maxRadius: 12,
+  // r186's PCF uses 5 Vogel taps; beyond ~16 texels the blur turns grainy, so
+  // wider penumbrae switch to coarser texels instead (see shadowModel.js).
+  maxRadius: 16,
   depthBias: -0.0002,
   // normalBias = texel world size * factor (clamped), avoids acne on big texels.
   normalBiasTexels: 1.5,
@@ -99,5 +104,35 @@ export const PLACEMENT_LIMITS = Object.freeze({
 /** Lowest allowed fixture height (keeps shifted lights above the floor). */
 export const MIN_FIXTURE_HEIGHT_M = 0.1;
 
-/** Parabolic focusing rod: 0 = fully focused (spot), 100 = fully flooded. */
+/**
+ * Parabolic focusing rod: 0 = head deep inside the dish (fully focused: narrow, hard),
+ * 100 = head out towards the opening (fully flooded: wide, soft).
+ */
 export const FOCUS_ROD_LIMITS = Object.freeze({ min: 0, max: 100, step: 1, default: 30 });
+
+/** Parabolic reflector internals (src/utils/parabolicReflector.js). */
+export const PARABOLIC_CONFIG = Object.freeze({
+  // Head travel along the rod, as fractions of the dish depth.
+  headMinDepthFraction: 0.08,
+  headMaxDepthFraction: 0.9,
+  // Rear-firing head emission: I(ψ) = leak + (1 − leak) · cos^k ψ.
+  headSideLeak: 0.06,
+  headEmissionExponent: 1,
+  // Fake-GI glow on the dish interior: value = (E / E_max)^gamma · intensity.
+  glowGamma: 0.6,
+  glowIntensity: 1.6,
+  glowOpacity: 0.85,
+  // Dish area counted as "lit" when irradiance ≥ this share of the peak.
+  coverageThreshold: 0.25,
+});
+
+/** 'Show Light Rays' helper (src/components/scene/BeamRaysHelper.jsx). */
+export const LIGHT_RAYS_CONFIG = Object.freeze({
+  rayCount: 16,
+  ringSegments: 64,
+  lineOpacity: 0.9,
+  dimmedLineOpacity: 0.4, // unselected lights
+  coreOpacity: 1,
+  fillOpacity: 0.07,
+  renderOrder: 20,
+});

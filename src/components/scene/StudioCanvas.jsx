@@ -52,7 +52,7 @@ function CameraViewController() {
  *   instead of a fixed 1024², so narrow beams use small maps.
  */
 export function StudioCanvas() {
-  const { lights, selectedLightId, showFixtures } = useLightingState();
+  const { lights, selectedLightId, showFixtures, showLightRays } = useLightingState();
   const { selectLight } = useLightingActions();
 
   return (
@@ -74,6 +74,7 @@ export function StudioCanvas() {
           light={light}
           isSelected={light.id === selectedLightId}
           showFixture={showFixtures}
+          showLightRays={showLightRays}
           onSelect={selectLight}
         />
       ))}

@@ -11,12 +11,14 @@
  * three.js mapping (r186 PCF: Vogel disk of radius `shadow.radius` texels,
  * so the blur's full width is 2 · r · t for texel size t):
  *   shadow frustum width at d   F = 2 · d · tan(θ)         (fov = 2θ = spot cone)
- *   texel size                  t = clamp(t0, F / Nmax, F / Nmin)
+ *   texel size                  t = clamp(max(t0, w / 2r_max), F / Nmax, F / Nmin)
  *   shadow.radius               r = w / (2t) = D · s / (2 · t · d)
  * With the constant target texel t0 the radius is directly proportional to
  * D / d: it rises as the focusing rod floods (D grows) and falls with distance.
  * Only very wide/far or very narrow/near beams hit the map-size clamps; there
  * t follows F, which keeps the blur physically sized (and r still monotonic).
+ * Very soft shadows (r would exceed r_max, where 5 PCF taps get grainy) use a
+ * coarser texel instead: r stays at r_max but the blur keeps its physical width.
  *
  * Map size N = ceil(F / t) rounded up to `mapSizeStep`, so narrow beams get
  * small (cheap) maps and the texel never exceeds t.
@@ -27,10 +29,14 @@ import { clamp } from './lightMath.js';
 const RAD_TO_DEG = 180 / Math.PI;
 
 /**
- * @param {{ sourceDiameterM: number, distance: number, halfAngle: number }} params
- *        halfAngle = SpotLight.angle (radians); distance = 3D distance to the subject.
+ * @param {{ sourceDiameterM: number, distance: number, halfAngle: number,
+ *   frustumDistance?: number }} params
+ *   halfAngle        SpotLight.angle (radians)
+ *   distance         emitter-to-subject distance (sets the penumbra)
+ *   frustumDistance  SpotLight-apex-to-subject distance (sets the shadow frustum);
+ *                    differs for parabolics, whose SpotLight sits at the virtual apex.
  */
-export function computeShadowParams({ sourceDiameterM, distance, halfAngle }) {
+export function computeShadowParams({ sourceDiameterM, distance, halfAngle, frustumDistance = distance }) {
   const {
     referenceOccluderGapM,
     targetTexelM,
@@ -53,8 +59,12 @@ export function computeShadowParams({ sourceDiameterM, distance, halfAngle }) {
   const apparentSizeDeg = 2 * Math.atan(D / (2 * d)) * RAD_TO_DEG;
   const penumbraM = (D * referenceOccluderGapM) / d;
 
-  const frustumWidthM = 2 * d * Math.tan(halfAngle);
-  const texelM = clamp(targetTexelM, frustumWidthM / maxMapSize, frustumWidthM / minMapSize);
+  const frustumWidthM = 2 * Math.max(frustumDistance, 0.1) * Math.tan(halfAngle);
+  const texelM = clamp(
+    Math.max(targetTexelM, penumbraM / (2 * maxRadius)),
+    frustumWidthM / maxMapSize,
+    frustumWidthM / minMapSize,
+  );
   const mapSize = clamp(
     Math.ceil(frustumWidthM / texelM / mapSizeStep) * mapSizeStep,
     minMapSize,
@@ -70,6 +80,6 @@ export function computeShadowParams({ sourceDiameterM, distance, halfAngle }) {
     bias: depthBias,
     normalBias: clamp(texelM * normalBiasTexels, minNormalBias, maxNormalBias),
     cameraNear: cameraNearM,
-    cameraFar: d + cameraFarMarginM,
+    cameraFar: Math.max(frustumDistance, d) + cameraFarMarginM,
   };
 }

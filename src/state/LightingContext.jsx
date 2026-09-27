@@ -24,7 +24,7 @@ import { clamp, snapPowerLevel } from '../utils/lightMath.js';
  * @property {boolean} innerDiffuser     Inner diffuser fitted (modifiers that offer one).
  * @property {boolean} enabled
  * @property {number} powerLevel         Connect-style scale: 10.0 = full, -1.0 = -1 stop.
- * @property {number} focusRod           Parabolic focusing rod, 0 = spot .. 100 = flood.
+ * @property {number} focusRod           Parabolic focusing rod, 0 = head inside (spot) .. 100 = head out (flood).
  * @property {boolean} colorTempEnabled  false = neutral white, colorTempK is kept.
  * @property {number} colorTempK         Source color temperature (3200K–6500K).
  * @property {boolean} gelEnabled        false = no gel, gelId is kept.
@@ -160,6 +160,8 @@ function createInitialState() {
     selectedLightId: lights[0]?.id ?? null,
     // View options; fixtures hidden = meshes invisible, light still emitted.
     showFixtures: true,
+    // Beam cone helpers ('Show Light Rays'); only drawn while fixtures are shown.
+    showLightRays: false,
     // `requestId` changes on every click so re-selecting a view resets the camera.
     cameraView: { id: 'fullBody', requestId: 0 },
   };
@@ -226,6 +228,9 @@ function lightingReducer(state, action) {
     case 'view/setShowFixtures':
       return { ...state, showFixtures: action.visible };
 
+    case 'view/setShowLightRays':
+      return { ...state, showLightRays: action.visible };
+
     case 'view/setCamera':
       return CAMERA_VIEWS[action.viewId]
         ? { ...state, cameraView: { id: action.viewId, requestId: state.cameraView.requestId + 1 } }
@@ -251,6 +256,7 @@ export function LightingProvider({ children }) {
       removeLight: (id) => dispatch({ type: 'light/remove', id }),
       selectLight: (id) => dispatch({ type: 'light/select', id }),
       setShowFixtures: (visible) => dispatch({ type: 'view/setShowFixtures', visible }),
+      setShowLightRays: (visible) => dispatch({ type: 'view/setShowLightRays', visible }),
       setCameraView: (viewId) => dispatch({ type: 'view/setCamera', viewId }),
       loadPreset: (presetId) =>
         dispatch({ type: 'preset/load', lights: buildLightsFromPreset(presetId) }),
