@@ -7,7 +7,8 @@ import { FOCUS_ROD_LIMITS } from '../../../config/sceneConfig.js';
  * local origin and the modifier opens towards +Z (the subject).
  * `isLit` switches emitting surfaces between glowing and idle.
  * Optional props: `emitColor` (glow color of lit surfaces, i.e. Kelvin × gel),
- * `grid` (GridDefinition | null), `focusRod` (0..100).
+ * `grid` (GridDefinition | null), `innerDiffuser` (InnerDiffuserDefinition | null),
+ * `focusRod` (0..100).
  */
 
 const HALF_PI = Math.PI / 2;
@@ -67,7 +68,14 @@ export function ReflectorMesh({ geometry, isLit, emitColor, grid }) {
  * focusing rod on the axis. The flash head slides from the focal point
  * (rod = 0, focused) back towards the apex (rod = 100, flooded).
  */
-export function ParabolicMesh({ geometry, isLit, emitColor, focusRod = FOCUS_ROD_LIMITS.default }) {
+export function ParabolicMesh({
+  geometry,
+  isLit,
+  emitColor,
+  grid,
+  innerDiffuser,
+  focusRod = FOCUS_ROD_LIMITS.default,
+}) {
   const { diameter, depth, segments = 24, color } = geometry;
   const radius = diameter / 2;
   const focalLength = radius ** 2 / (4 * depth);
@@ -106,6 +114,14 @@ export function ParabolicMesh({ geometry, isLit, emitColor, focusRod = FOCUS_ROD
         <sphereGeometry args={[0.035, 16, 16]} />
         <EmitterMaterial isLit={isLit} color={emitColor} />
       </mesh>
+      {innerDiffuser && (
+        // Diffusion disc just in front of the head; glows when the strobe fires.
+        <mesh position={[0, 0, Math.min(headZ + 0.08, depth * 0.9)]}>
+          <circleGeometry args={[radius * innerDiffuser.geometry.radiusFraction, 32]} />
+          <EmitterMaterial isLit={isLit} color={isLit ? emitColor : innerDiffuser.geometry.color} />
+        </mesh>
+      )}
+      {grid && <GridMesh grid={grid} radius={radius} frontZ={depth} />}
     </group>
   );
 }

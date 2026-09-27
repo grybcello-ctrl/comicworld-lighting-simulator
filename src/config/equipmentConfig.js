@@ -192,7 +192,10 @@ export const STROBES = [
  * @property {number} [virtualSourceOffsetM=0]
  *           Apparent source distance behind the fixture. 0 = point source (inverse
  *           square, decay 2); larger = collimated "throw" (slower falloff).
- * @property {number} shadowSoftness        Shadow blur radius.
+ * @property {number} [sourceSizeFraction=1]
+ *           Share of `geometry.diameter` that actually emits light, as seen from the
+ *           subject. Drives the apparent-size shadow model (see utils/shadowModel.js).
+ * @property {number} [sourceDiameterM]     Explicit emitter size (modifiers without a diameter).
  * @property {BeamProfile} [profile]
  */
 
@@ -209,9 +212,22 @@ export const STROBES = [
  * spot:      BeamOptics fields directly on `lighting`.
  * parabolic: `lighting.focus = { spot: BeamOptics, flood: BeamOptics }`
  *            (focusing rod 0 = spot, 100 = flood, linear in between).
- * area:      emitter size is derived from `geometry`; BeamOptics fields
+ * area:      emitter size is derived from `geometry`; beamAngleDeg/penumbra
  *            configure the soft shadow proxy.
  * @property {string[]} [gridIds]        GRIDS that can be fitted to this modifier.
+ *           One grid -> on/off toggle in the UI, several -> a select.
+ * @property {{ innerDiffuser?: InnerDiffuserDefinition }} [accessories]
+ */
+
+/**
+ * @typedef {Object} InnerDiffuserDefinition
+ * @property {string} name
+ * @property {number} lightLossStops
+ * @property {number} beamAngleAddDeg
+ * @property {number} penumbraAdd
+ * @property {number} hotspotFlatten        0 = no change, 1 = flat beam.
+ * @property {number} sourceSizeGain        Multiplies the effective emitter diameter.
+ * @property {number} sourceSizeMinFraction Lower bound, as a fraction of geometry.diameter.
  */
 
 /** @type {ModifierDefinition[]} */
@@ -234,7 +250,7 @@ export const MODIFIERS = [
           penumbra: 0.15,
           centerGainStops: 1.5,
           virtualSourceOffsetM: 1.2,
-          shadowSoftness: 1.5,
+          sourceSizeFraction: 0.1, // only a small hot area of the dish is lit
           profile: { hotspotRadius: 0.35, hotspotGain: 0.8, centerDip: 0 },
         },
         // Head pulled back to the apex: wide, enveloping light, center shadowed by the head.
@@ -243,7 +259,7 @@ export const MODIFIERS = [
           penumbra: 0.75,
           centerGainStops: 0,
           virtualSourceOffsetM: 0.15,
-          shadowSoftness: 9,
+          sourceSizeFraction: 1, // the whole reflector glows
           profile: { hotspotRadius: 0.9, hotspotGain: 0.3, centerDip: 0.25 },
         },
       },
@@ -265,7 +281,7 @@ export const MODIFIERS = [
           penumbra: 0.12,
           centerGainStops: 1.7,
           virtualSourceOffsetM: 0.9,
-          shadowSoftness: 1.2,
+          sourceSizeFraction: 0.12, // only a small hot area of the dish is lit
           profile: { hotspotRadius: 0.3, hotspotGain: 0.85, centerDip: 0 },
         },
         // Deep dish: stronger head occlusion when flooded.
@@ -274,9 +290,24 @@ export const MODIFIERS = [
           penumbra: 0.7,
           centerGainStops: 0,
           virtualSourceOffsetM: 0.1,
-          shadowSoftness: 7,
+          sourceSizeFraction: 1, // the whole reflector glows
           profile: { hotspotRadius: 0.85, hotspotGain: 0.35, centerDip: 0.3 },
         },
+      },
+    },
+    gridIds: ['parabolix-control-grid-40'],
+    accessories: {
+      // Diffusion disc inside the dish, in front of the head.
+      innerDiffuser: {
+        name: 'Inner Diffuser',
+        lightLossStops: 1, // exactly −1 EV on axis
+        beamAngleAddDeg: 6, // scattering widens the beam slightly
+        penumbraAdd: 0.15,
+        hotspotFlatten: 0.5, // halves the hot-spot contrast
+        // Emitting area grows: D_eff = max(D_eff * sourceSizeGain, D * sourceSizeMinFraction)
+        sourceSizeGain: 1.6,
+        sourceSizeMinFraction: 0.6,
+        geometry: { radiusFraction: 0.42, color: '#f4f4f4' },
       },
     },
   },
@@ -293,7 +324,6 @@ export const MODIFIERS = [
       lightLossStops: 1.3,
       beamAngleDeg: 80,
       penumbra: 0.9,
-      shadowSoftness: 7,
     },
   },
   {
@@ -307,7 +337,6 @@ export const MODIFIERS = [
       lightLossStops: 1.5,
       beamAngleDeg: 85,
       penumbra: 1,
-      shadowSoftness: 10,
     },
   },
 
@@ -326,7 +355,7 @@ export const MODIFIERS = [
       centerGainStops: 0.3,
       // Compact source: pure inverse-square (decay 2) -> crisp, contrasty fall-off.
       virtualSourceOffsetM: 0,
-      shadowSoftness: 3,
+      sourceSizeFraction: 0.85, // ring of light around the deflector
       // White interior: a defined but creamy center, softer than the silver version.
       profile: { hotspotRadius: 0.45, hotspotGain: 0.55 },
     },
@@ -344,7 +373,7 @@ export const MODIFIERS = [
       lightLossStops: 0.1,
       centerGainStops: 0.5,
       virtualSourceOffsetM: 0.3,
-      shadowSoftness: 1.2,
+      sourceSizeFraction: 0.7, // hot tube + inner reflector wall
       profile: { hotspotRadius: 0.35, hotspotGain: 0.75 },
     },
     gridIds: ['profoto-grid-10-white', 'profoto-grid-20-white'],
@@ -357,7 +386,7 @@ export const MODIFIERS = [
     category: 'bare',
     mounts: ALL_MOUNTS,
     geometry: { shape: 'none' },
-    lighting: { beamAngleDeg: 150, penumbra: 0.2, lightLossStops: 0, shadowSoftness: 1 },
+    lighting: { beamAngleDeg: 150, penumbra: 0.2, lightLossStops: 0, sourceDiameterM: 0.03 },
   },
   {
     id: 'standard-reflector-18',
@@ -365,7 +394,7 @@ export const MODIFIERS = [
     category: 'bare',
     mounts: STUDIO_MOUNTS,
     geometry: { shape: 'reflector', diameter: 0.18, depth: 0.12, color: '#b9b9b9' },
-    lighting: { beamAngleDeg: 55, penumbra: 0.3, lightLossStops: 0, shadowSoftness: 1.5 },
+    lighting: { beamAngleDeg: 55, penumbra: 0.3, lightLossStops: 0, sourceSizeFraction: 0.7 },
   },
   {
     id: 'softbox-60x90',
@@ -378,7 +407,6 @@ export const MODIFIERS = [
       beamAngleDeg: 75,
       penumbra: 0.85,
       lightLossStops: 1.5,
-      shadowSoftness: 8,
     },
   },
   {
@@ -392,7 +420,6 @@ export const MODIFIERS = [
       beamAngleDeg: 65,
       penumbra: 0.8,
       lightLossStops: 1.7,
-      shadowSoftness: 6,
     },
   },
   {
@@ -406,7 +433,6 @@ export const MODIFIERS = [
       beamAngleDeg: 85,
       penumbra: 1,
       lightLossStops: 1.5,
-      shadowSoftness: 12,
     },
   },
   {
@@ -415,7 +441,7 @@ export const MODIFIERS = [
     category: 'umbrella',
     mounts: ALL_MOUNTS,
     geometry: { shape: 'umbrella', diameter: 1.05, depth: 0.3, color: '#f2f2f2' },
-    lighting: { beamAngleDeg: 100, penumbra: 0.9, lightLossStops: 1, shadowSoftness: 9 },
+    lighting: { beamAngleDeg: 100, penumbra: 0.9, lightLossStops: 1, sourceSizeFraction: 0.9 },
   },
   {
     id: 'beauty-dish-55',
@@ -423,7 +449,7 @@ export const MODIFIERS = [
     category: 'dish',
     mounts: STUDIO_MOUNTS,
     geometry: { shape: 'beautyDish', diameter: 0.55, depth: 0.16, color: '#e8e8e8' },
-    lighting: { beamAngleDeg: 60, penumbra: 0.5, lightLossStops: 0.7, shadowSoftness: 4 },
+    lighting: { beamAngleDeg: 60, penumbra: 0.5, lightLossStops: 0.7, sourceSizeFraction: 0.85 },
   },
   {
     id: 'speedlight-softbox-40',
@@ -436,23 +462,24 @@ export const MODIFIERS = [
       beamAngleDeg: 70,
       penumbra: 0.75,
       lightLossStops: 1.3,
-      shadowSoftness: 5,
     },
   },
 ];
 
 /**
- * Honeycomb grids. A grid *strictly* replaces the host modifier's beam:
- * the SpotLight angle is set to exactly `beamAngleDeg`, with a near-zero
- * penumbra and an edge cut in the beam profile (hard edge).
+ * Honeycomb grids. A grid *strictly* limits the host modifier's beam:
+ *   angle    = min(host angle, grid.beamAngleDeg)
+ *   penumbra = min(host penumbra, grid.penumbra)     (tiny for a hard edge)
+ *   profile  = { ...host profile, ...grid.profile }  (edgeStart < 1 = edge cut)
+ * and shrinks the apparent source (each point sees only part of the emitter).
  * @typedef {Object} GridDefinition
  * @property {string} id
  * @property {string} name
  * @property {number} beamAngleDeg     Full beam angle enforced by the grid.
- * @property {number} penumbra         Kept tiny for a hard edge.
+ * @property {number} penumbra         Upper bound for the penumbra (tiny = hard edge).
  * @property {number} lightLossStops   Light absorbed by the honeycomb.
- * @property {number} shadowSoftness
- * @property {BeamProfile} profile
+ * @property {number} sourceSizeFactor Apparent emitter size multiplier (< 1).
+ * @property {Partial<BeamProfile>} profile
  * @property {{ thickness: number, color: string }} geometry
  */
 
@@ -464,10 +491,23 @@ export const GRIDS = [
     beamAngleDeg: 10,
     penumbra: 0.03,
     lightLossStops: 1.3,
-    shadowSoftness: 1,
+    sourceSizeFactor: 0.7,
     // Flat-ish core with a steep cut starting at 90 % of the cone.
     profile: { hotspotRadius: 0.6, hotspotGain: 0.3, edgeStart: 0.9 },
     geometry: { thickness: 0.025, color: '#e6e6e6' },
+  },
+  {
+    id: 'parabolix-control-grid-40',
+    name: 'Control Grid 40° (35D)',
+    // Fabric egg-crate over the whole front: limits the beam to ~40° and
+    // kills spill, but keeps a feathered (not razor) edge.
+    beamAngleDeg: 40,
+    penumbra: 0.35, // cap: penumbra = min(host penumbra, 0.35)
+    lightLossStops: 0.5,
+    sourceSizeFactor: 0.8,
+    // Merged onto the host profile: keeps the parabolic hot spot / center dip.
+    profile: { edgeStart: 0.7 },
+    geometry: { thickness: 0.04, color: '#1b1b1b' },
   },
   {
     id: 'profoto-grid-20-white',
@@ -475,7 +515,7 @@ export const GRIDS = [
     beamAngleDeg: 20,
     penumbra: 0.05,
     lightLossStops: 1.0,
-    shadowSoftness: 1,
+    sourceSizeFactor: 0.7,
     profile: { hotspotRadius: 0.6, hotspotGain: 0.35, edgeStart: 0.88 },
     geometry: { thickness: 0.02, color: '#e6e6e6' },
   },

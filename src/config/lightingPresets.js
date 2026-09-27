@@ -5,7 +5,8 @@
  *   elevationDeg 0 = eye level, positive = above
  *   distance     meters from the head
  * powerLevel uses the Connect-style scale (10.0 = full, -1.0 = one stop).
- * Optional: colorTempK (3200–6500), gelId (OCF gels, B10-series strobes only).
+ * Optional: colorTempK (3200–6500), gelId (OCF gels, B10-series strobes only),
+ * gridId, innerDiffuser, and placement shiftX/Y/Z (m) + tiltDeg/panDeg/rollDeg.
  */
 export const LIGHTING_PRESETS = [
   {
@@ -26,6 +27,30 @@ export const LIGHTING_PRESETS = [
         modifierId: 'profoto-ocf-softbox-1x4',
         powerLevel: 6,
         placement: { azimuthDeg: -135, elevationDeg: 10, distance: 1.5 },
+      },
+    ],
+  },
+  {
+    id: 'parabolix-beauty',
+    name: 'Parabolix 35D Beauty (Diffuser + Shifted Kicker)',
+    lights: [
+      {
+        label: 'Key',
+        strobeId: 'profoto-b10x-plus',
+        modifierId: 'parabolix-35d',
+        innerDiffuser: true,
+        powerLevel: 7,
+        focusRod: 70,
+        placement: { azimuthDeg: 15, elevationDeg: 20, distance: 1.4 },
+      },
+      {
+        label: 'Kicker',
+        strobeId: 'profoto-b10-plus',
+        modifierId: 'profoto-zoom-reflector-white',
+        gridId: 'profoto-grid-20-white',
+        powerLevel: 6.5,
+        // Moved back and up without re-aiming, then tilted down onto the hair/shoulder.
+        placement: { azimuthDeg: -140, elevationDeg: 25, distance: 1.8, shiftY: 0.3, tiltDeg: -8 },
       },
     ],
   },

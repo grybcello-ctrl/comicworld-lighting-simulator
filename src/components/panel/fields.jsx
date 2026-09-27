@@ -1,8 +1,18 @@
 /** Small, reusable form controls for the control panel. */
 
-export function SliderField({ label, value, min, max, step, onChange, formatValue = String, hint }) {
+export function SliderField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  formatValue = String,
+  hint,
+  disabled = false,
+}) {
   return (
-    <label className="field">
+    <label className={`field ${disabled ? 'field--disabled' : ''}`}>
       <span className="field__row">
         <span className="field__label">{label}</span>
         <span className="field__value">{formatValue(value)}</span>
@@ -14,6 +24,8 @@ export function SliderField({ label, value, min, max, step, onChange, formatValu
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
+        aria-label={label}
         onChange={(event) => onChange(Number(event.target.value))}
       />
     </label>
@@ -24,11 +36,11 @@ export function SliderField({ label, value, min, max, step, onChange, formatValu
  * Select with optional grouping.
  * @param {{ key: string, label: string, items: { id: string, name: string }[] }[]} groups
  */
-export function GroupedSelectField({ label, value, groups, onChange }) {
+export function GroupedSelectField({ label, value, groups, onChange, disabled = false }) {
   return (
-    <label className="field">
+    <label className={`field ${disabled ? 'field--disabled' : ''}`}>
       <span className="field__label">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
         {groups.map((group) => (
           <optgroup key={group.key} label={group.label}>
             {group.items.map((item) => (
@@ -43,12 +55,31 @@ export function GroupedSelectField({ label, value, groups, onChange }) {
   );
 }
 
-export function ToggleField({ label, checked, onChange }) {
+export function ToggleField({ label, checked, onChange, disabled = false, title }) {
   return (
-    <label className="toggle">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    <label className={`toggle ${disabled ? 'toggle--disabled' : ''}`} title={title}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
       <span>{label}</span>
     </label>
+  );
+}
+
+/**
+ * Section heading with an on/off checkbox, e.g. "Color temperature [x]".
+ * Children are rendered (disabled) even when off, so values stay visible.
+ */
+export function ToggleSection({ label, checked, onChange, disabled = false, hint, children }) {
+  return (
+    <div className={`toggle-section ${checked ? 'toggle-section--on' : ''}`}>
+      <ToggleField label={label} checked={checked} onChange={onChange} disabled={disabled} />
+      {hint && <span className="field__hint">{hint}</span>}
+      {children}
+    </div>
   );
 }
 

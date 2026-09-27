@@ -323,3 +323,77 @@ body,
   border-color: var(--color-light-on);
   background: transparent;
 }
+
+/* ---------- Toggle sections & disabled fields ---------- */
+.toggle-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.toggle-section--on {
+  border-color: var(--color-accent);
+}
+
+.toggle-section > .toggle {
+  font-weight: 600;
+}
+
+.field--disabled,
+.toggle--disabled {
+  opacity: 0.45;
+}
+
+.field input[type='range']:disabled,
+.field select:disabled {
+  cursor: not-allowed;
+}
+
+/* ---------- Grouped controls ---------- */
+.control-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.control-grid--three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.button--small {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.button--active {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+.status-message {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: pre-line;
+}
+
+.status-message--error {
+  color: var(--color-danger);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

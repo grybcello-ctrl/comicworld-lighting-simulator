@@ -1,4 +1,9 @@
+import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
+
 const DEG_TO_RAD = Math.PI / 180;
+const RAD_TO_DEG = 180 / Math.PI;
+const WORLD_UP = new Vector3(0, 1, 0);
+const LOCAL_FORWARD = new Vector3(0, 0, 1);
 
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export const lerp = (from, to, t) => from + (to - from) * t;
@@ -24,6 +29,63 @@ export function placementToPosition({ azimuthDeg, elevationDeg, distance }, orig
     origin[1] + distance * Math.sin(elevation),
     origin[2] + horizontal * Math.cos(azimuth),
   ];
+}
+
+/**
+ * Full fixture pose from a placement.
+ *
+ * 1. Orbit:  azimuth / elevation / distance around `target` (re-aims the light).
+ * 2. Aim:    local +Z (the beam axis) points at `target` from the *orbit* position.
+ * 3. Rotate: tilt / pan / roll offsets in the fixture's local frame
+ *              tilt + = aim up          -> rotate about local X by −tilt
+ *              pan  + = aim right       -> rotate about local Y by −pan
+ *                        (seen from behind the fixture; local +X is its left)
+ *              roll + = clockwise seen from behind -> rotate about local Z by +roll
+ *            Euler order 'YXZ' = pan, then tilt, then roll (like a yoke).
+ * 4. Shift:  world-space translation (shiftX / shiftY / shiftZ). The fixture
+ *            moves rigidly — it does NOT re-aim, so the beam slides parallel
+ *            (feathering). Use tilt/pan to re-aim after shifting.
+ *
+ * @returns {{ position: [number, number, number], quaternion: [number, number, number, number],
+ *   aimPoint: [number, number, number], distanceToSubject: number, subjectOffAxisDeg: number }}
+ */
+export function computeFixturePose(placement, target, { minHeight = 0 } = {}) {
+  const {
+    shiftX = 0,
+    shiftY = 0,
+    shiftZ = 0,
+    tiltDeg = 0,
+    panDeg = 0,
+    rollDeg = 0,
+  } = placement;
+  const targetVec = new Vector3(...target);
+  const orbitVec = new Vector3(...placementToPosition(placement, target));
+
+  // Matrix4.lookAt(eye, center, up) builds +Z = eye − center, so pass (target, orbit)
+  // to get +Z pointing from the fixture to the subject (same as Object3D.lookAt).
+  const aimQuat = new Quaternion().setFromRotationMatrix(
+    new Matrix4().lookAt(targetVec, orbitVec, WORLD_UP),
+  );
+  const offsetQuat = new Quaternion().setFromEuler(
+    new Euler(-tiltDeg * DEG_TO_RAD, -panDeg * DEG_TO_RAD, rollDeg * DEG_TO_RAD, 'YXZ'),
+  );
+  const quaternion = aimQuat.multiply(offsetQuat);
+
+  const position = orbitVec.add(new Vector3(shiftX, shiftY, shiftZ));
+  position.y = Math.max(position.y, minHeight);
+
+  const forward = LOCAL_FORWARD.clone().applyQuaternion(quaternion);
+  const toSubject = targetVec.clone().sub(position);
+  const distanceToSubject = toSubject.length();
+
+  return {
+    position: position.toArray(),
+    quaternion: quaternion.toArray(),
+    aimPoint: position.clone().addScaledVector(forward, distanceToSubject).toArray(),
+    distanceToSubject,
+    // Angle between the beam axis and the subject: 0 = centered in the beam.
+    subjectOffAxisDeg: forward.angleTo(toSubject) * RAD_TO_DEG,
+  };
 }
 
 // ---------------------------------------------------------------------------

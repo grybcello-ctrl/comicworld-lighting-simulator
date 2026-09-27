@@ -1,16 +1,9 @@
+import { useThree } from '@react-three/fiber';
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import { Color, LinearSRGBColorSpace, Object3D } from 'three';
-import {
-  getGelById,
-  getGridById,
-  getModifierById,
-  getStrobeById,
-} from '../../config/equipmentRegistry.js';
-import { RENDER_CONFIG, SUBJECT_TARGET } from '../../config/sceneConfig.js';
-import { resolveLightRig } from '../../utils/beamModel.js';
+import { getGridById, getModifierById, getStrobeById } from '../../config/equipmentRegistry.js';
+import { selectFixturePose, selectLightColor, selectLightRig } from '../../state/lightSelectors.js';
 import { getBeamProfileTexture } from '../../utils/beamProfileTexture.js';
-import { resolveLightColor } from '../../utils/colorTemperature.js';
-import { placementToPosition } from '../../utils/lightMath.js';
 import { MODIFIER_RENDERERS, resolveRenderer, STROBE_BODY_RENDERERS } from './fixtures/index.js';
 
 /** Simple vertical stand from the floor up to the fixture. */
@@ -32,8 +25,31 @@ function LightStand({ position }) {
 }
 
 /**
+ * Re-renders this light's shadow map only when something that changes the
+ * depth image changes (pose, cone angle, map size, clip planes). Camera orbits
+ * and radius/bias tweaks (applied at sampling time) cost no shadow passes.
+ * A resized map must be disposed: WebGLShadowMap only allocates when map === null.
+ */
+function useOnDemandShadow(lightRef, { mapSize, deps }) {
+  const invalidate = useThree((state) => state.invalidate);
+
+  useLayoutEffect(() => {
+    const shadow = lightRef.current?.shadow;
+    if (!shadow) return;
+    shadow.autoUpdate = false;
+    if (shadow.map && shadow.map.width !== mapSize) {
+      shadow.map.dispose();
+      shadow.map = null;
+    }
+    shadow.needsUpdate = true;
+    invalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapSize, ...deps]);
+}
+
+/**
  * Renders one LightInstance: stand, strobe body, modifier, and the three.js
- * lights produced by `resolveLightRig` (SpotLight and/or RectAreaLight).
+ * lights produced by `selectLightRig` (SpotLight and/or RectAreaLight).
  *
  * `showFixture = false` hides only the meshes (stand, body, modifier). The
  * lights are deliberately kept *outside* the hidden groups: three.js skips the
@@ -43,52 +59,38 @@ export function StudioLight({ light, isSelected, showFixture = true, onSelect })
   const strobe = getStrobeById(light.strobeId);
   const modifier = getModifierById(light.modifierId);
   const grid = getGridById(light.gridId);
-  const gel = getGelById(light.gelId);
+  const spotRef = useRef(null);
+  const target = useMemo(() => new Object3D(), []);
 
-  // Kelvin × gel, mixed spectrally. Luminance = gel transmission, so the gel's
-  // light loss is baked into the color and scales both light types equally.
+  // Shared selectors: the panel shows exactly these values.
+  const pose = useMemo(() => selectFixturePose(light), [light.placement]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rig = useMemo(() => selectLightRig(light, pose), [light, pose]);
+
+  // Kelvin × gel (after the on/off toggles), mixed spectrally. Luminance = gel
+  // transmission, so the gel's light loss scales both light types equally.
+  const { colorTempEnabled, colorTempK, gelEnabled, gelId, strobeId } = light;
   const { lightColor, emitColor } = useMemo(() => {
-    const resolved = resolveLightColor(light.colorTempK, gel);
+    const resolved = selectLightColor({ colorTempEnabled, colorTempK, gelEnabled, gelId, strobeId });
     return {
       lightColor: new Color().setRGB(...resolved.linearRgb, LinearSRGBColorSpace),
       emitColor: new Color(resolved.displayHex),
     };
-  }, [light.colorTempK, gel]);
+  }, [colorTempEnabled, colorTempK, gelEnabled, gelId, strobeId]);
 
-  const fixtureRef = useRef(null);
-  const target = useMemo(() => new Object3D(), []);
+  const spot = rig?.spot;
+  const shadow = spot?.shadow;
+  useOnDemandShadow(spotRef, {
+    mapSize: shadow?.mapSize ?? 0,
+    deps: [Boolean(spot), pose, spot?.angle, shadow?.cameraNear, shadow?.cameraFar, light.enabled],
+  });
 
-  const position = useMemo(
-    () => placementToPosition(light.placement, SUBJECT_TARGET),
-    [light.placement],
-  );
-
-  // Aim the fixture (local +Z) at the subject whenever it moves.
-  useLayoutEffect(() => {
-    fixtureRef.current?.lookAt(...SUBJECT_TARGET);
-  }, [position]);
-
-  const rig = useMemo(
-    () =>
-      strobe && modifier
-        ? resolveLightRig({
-            strobe,
-            modifier,
-            grid,
-            powerLevel: light.powerLevel,
-            focusRod: light.focusRod,
-            distance: light.placement.distance,
-          })
-        : null,
-    [strobe, modifier, grid, light.powerLevel, light.focusRod, light.placement.distance],
-  );
-
-  const beamMap = rig?.spot ? getBeamProfileTexture(rig.spot.profile, rig.spot.angle) : null;
+  const beamMap = spot ? getBeamProfileTexture(spot.profile, spot.angle) : null;
 
   if (!rig) return null;
 
   const BodyRenderer = resolveRenderer(STROBE_BODY_RENDERERS, strobe.body.shape, 'cylinder');
   const ModifierRenderer = resolveRenderer(MODIFIER_RENDERERS, modifier.geometry.shape, 'none');
+  const innerDiffuser = light.innerDiffuser ? modifier.accessories?.innerDiffuser : null;
   const handleClick = (event) => {
     event.stopPropagation();
     onSelect(light.id);
@@ -97,11 +99,15 @@ export function StudioLight({ light, isSelected, showFixture = true, onSelect })
   return (
     <group name={`studio-light-${light.id}`}>
       <group visible={showFixture}>
-        <LightStand position={position} />
+        <LightStand position={pose.position} />
       </group>
 
       {/* Invisible meshes still raycast in three.js, so drop the handler when hidden. */}
-      <group ref={fixtureRef} position={position} onClick={showFixture ? handleClick : undefined}>
+      <group
+        position={pose.position}
+        quaternion={pose.quaternion}
+        onClick={showFixture ? handleClick : undefined}
+      >
         <group visible={showFixture}>
           {BodyRenderer && <BodyRenderer body={strobe.body} isSelected={isSelected} />}
           {ModifierRenderer && (
@@ -110,6 +116,7 @@ export function StudioLight({ light, isSelected, showFixture = true, onSelect })
               isLit={light.enabled}
               emitColor={emitColor}
               grid={grid}
+              innerDiffuser={innerDiffuser}
               focusRod={light.focusRod}
             />
           )}
@@ -128,27 +135,30 @@ export function StudioLight({ light, isSelected, showFixture = true, onSelect })
         )}
       </group>
 
-      <primitive object={target} position={SUBJECT_TARGET} />
-      {rig.spot && (
+      {/* Aim point along the (tilted/panned) beam axis, at the subject's distance. */}
+      <primitive object={target} position={pose.aimPoint} />
+      {spot && (
         <spotLight
-          position={position}
+          ref={spotRef}
+          position={pose.position}
           target={target}
           visible={light.enabled}
-          intensity={rig.spot.intensity}
+          intensity={spot.intensity}
           color={lightColor}
-          angle={rig.spot.angle}
-          penumbra={rig.spot.penumbra}
-          decay={rig.spot.decay}
+          angle={spot.angle}
+          penumbra={spot.penumbra}
+          decay={spot.decay}
           distance={0}
           // `map` must be explicitly null to clear a previous profile.
           map={beamMap}
           castShadow
-          shadow-mapSize={[RENDER_CONFIG.shadowMapSize, RENDER_CONFIG.shadowMapSize]}
-          shadow-bias={-0.0004}
-          shadow-normalBias={0.02}
-          shadow-radius={rig.spot.shadowRadius}
-          shadow-camera-near={0.1}
-          shadow-camera-far={20}
+          // Apparent-size shadows (utils/shadowModel.js): radius ∝ source size / distance.
+          shadow-mapSize={[shadow.mapSize, shadow.mapSize]}
+          shadow-radius={shadow.radius}
+          shadow-bias={shadow.bias}
+          shadow-normalBias={shadow.normalBias}
+          shadow-camera-near={shadow.cameraNear}
+          shadow-camera-far={shadow.cameraFar}
         />
       )}
     </group>
