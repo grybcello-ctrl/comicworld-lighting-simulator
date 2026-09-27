@@ -4,8 +4,8 @@ import { useLayoutEffect } from 'react';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { CAMERA_CONFIG, CAMERA_VIEWS, RENDER_CONFIG } from '../../config/sceneConfig.js';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
-import { MannequinSubject } from './MannequinSubject.jsx';
 import { StudioLight } from './StudioLight.jsx';
+import { SubjectModel } from './SubjectModel.jsx';
 
 // RectAreaLight (softboxes) needs its LTC lookup textures registered once.
 RectAreaLightUniformsLib.init();
@@ -66,7 +66,8 @@ export function StudioCanvas() {
       <ambientLight intensity={RENDER_CONFIG.ambientIntensity} />
 
       <StudioFloor />
-      <MannequinSubject />
+      {/* Default mannequin or the uploaded glTF/GLB (subjectStore.js). */}
+      <SubjectModel />
 
       {lights.map((light) => (
         <StudioLight

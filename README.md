@@ -19,7 +19,8 @@ src/
 ├─ state/
 │  ├─ LightingContext.jsx     # Light instances (useReducer + context)
 │  ├─ lightSelectors.js       # Shared derived data (pose, rig, color) for scene + panel
-│  └─ setupSerializer.js      # JSON export / import
+│  ├─ setupSerializer.js      # JSON export / import
+│  └─ subjectStore.js         # Subject type + custom model lifecycle
 ├─ utils/
 │  ├─ lightMath.js            # Placement, Connect-style power scale (f-stop law)
 │  ├─ beamModel.js            # Strobe + modifier + grid → three.js light rig
@@ -30,6 +31,9 @@ src/
 │  ├─ shadowModel.js          # Apparent-size shadows → shadow.radius / map size
 │  ├─ beamProfile.js          # Beam profile, flattening, energy (effective solid angle)
 │  ├─ parabolicReflector.js   # Focusing-rod head travel, dish irradiance (glow)
+│  ├─ modelLoader.js          # Local glTF/GLB loading (blob URLs, Draco, Meshopt)
+│  ├─ modelPreparation.js     # Shadows, unlit → PBR, Box3 auto-fit
+│  ├─ disposeObject3D.js      # Frees geometries, materials, textures, bitmaps
 │  ├─ skinTexture.js          # Procedural skin normal + roughness maps
 │  └─ skinMaterial.js         # PBR skin materials for the mannequin
 └─ components/
@@ -88,7 +92,7 @@ Light instances only store `strobeId` / `modifierId`, and the specs are always r
   - Each shadow map is sized to fit its beam's footprint.
 - **JSON:** Export / Import saves and restores every light setting. Imported files go through the same validation as lights created in the UI, and any changes are reported in the panel.
 
-## Phase 5 — parabolics and light rays
+## Phase 4.5 — parabolics and light rays
 
 - **Focusing rod:** the rear-firing strobe slides along the dish axis.
   - Rod 0 pushes the head deep inside to the focal point `f = R²/4·depth`.
@@ -108,3 +112,21 @@ Light instances only store `strobeId` / `modifierId`, and the specs are always r
 - **Show Light Rays:** draws each light's beam from the modifier exit to the subject: rays, the footprint ring, the full-intensity core ring and the beam axis.
   - It reads the live SpotLight in `useFrame`, so rod, tilt and shift changes show up in the same frame.
   - It is hidden together with the fixtures and never casts shadows or catches clicks.
+
+## Phase 5 — custom model loader
+
+- **Subject selector:** at the top of the panel, choose Default Mannequin (the default) or Custom Model.
+  - With Custom Model selected, an upload button accepts `.glb` / `.gltf` files.
+  - For a `.gltf` with external `.bin` or texture files, select all of them at once.
+  - Until a model finishes loading, the mannequin stays on stage as a placeholder.
+- **Local only:** files are read with `URL.createObjectURL()` and parsed by `GLTFLoader`. Nothing is uploaded.
+  - `GLTFLoader` is lazy-loaded, so the main bundle does not grow.
+  - Draco and Meshopt decoders come bundled with three.js and are served from the same origin.
+- **Lighting:** every mesh gets `castShadow` and `receiveShadow`. The model's own PBR materials are kept, so they respond to the strobes, softbox area lights, shadows and gel colors.
+  - Unlit materials ignore light, so they are converted to `MeshStandardMaterial` with the same maps.
+  - Lights and cameras embedded in the file are removed.
+- **Auto-fit:** `Box3.setFromObject(model, true)` measures the model. The scale is `1.725 / height`, and an offset of `(−center.x, −min.y, −center.z)` is applied. Result: feet at y = 0, centered on x = 0 / z = 0, same height as the mannequin.
+- **Clean-up:** switching back to the mannequin, or replacing the model, disposes all geometries, materials and textures, and closes decoded ImageBitmaps.
+  - Object URLs are revoked as soon as each load settles.
+  - A load that is superseded before it finishes is disposed when it arrives.
+  - Shadow maps are refreshed whenever the subject changes.

@@ -1,0 +1,147 @@
+import { useRef } from 'react';
+import { SUBJECT_CONFIG, SUBJECT_TYPES } from '../../config/sceneConfig.js';
+import { loadCustomModel, setSubjectType, useSubjectState } from '../../state/subjectStore.js';
+import { MODEL_FILE_ACCEPT } from '../../utils/modelLoader.js';
+import { ReadoutList } from './fields.jsx';
+
+const SUBJECT_OPTIONS = [
+  { value: SUBJECT_TYPES.MANNEQUIN, label: 'Default Mannequin' },
+  { value: SUBJECT_TYPES.CUSTOM, label: 'Custom Model' },
+];
+
+const formatBytes = (bytes) =>
+  bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+const formatVector = (values, digits = 2) => values.map((value) => value.toFixed(digits)).join(' × ');
+const formatSigned = (value) => (Math.abs(value) < 5e-4 ? '0.000' : value.toFixed(3));
+
+function describeReleased(released) {
+  if (!released) return null;
+  const parts = [
+    `${released.geometries} geometries`,
+    `${released.materials} materials`,
+    `${released.textures} textures`,
+  ];
+  if (released.imageBitmaps) parts.push(`${released.imageBitmaps} image bitmaps`);
+  return `Previous custom model disposed: ${parts.join(', ')}.`;
+}
+
+function ModelReadout({ info }) {
+  const minY = info.fittedMin[1];
+  const [centerX, , centerZ] = info.fittedCenter;
+  const notes = [];
+  if (info.unlitMaterialsConverted) notes.push(`${info.unlitMaterialsConverted} unlit material(s) made PBR`);
+  if (info.strippedLights || info.strippedCameras) {
+    notes.push(`removed ${info.strippedLights} embedded light(s), ${info.strippedCameras} camera(s)`);
+  }
+  const compression = info.extensionsUsed.filter((name) => /draco|meshopt/i.test(name));
+  if (compression.length) notes.push(`decoded ${compression.join(', ')}`);
+  if (info.animationCount) notes.push(`${info.animationCount} animation(s) not played (static pose)`);
+  if (info.missingFiles.length) notes.push(`missing: ${info.missingFiles.join(', ')}`);
+  if (info.ignoredFiles.length) notes.push(`ignored: ${info.ignoredFiles.join(', ')}`);
+
+  const items = [
+    {
+      label: 'File',
+      value: `${info.fileName} · ${formatBytes(info.totalBytes)}${
+        info.companionCount ? ` (+${info.companionCount} file(s))` : ''
+      }`,
+    },
+    { label: 'Original size (model units)', value: formatVector(info.originalSize, 3) },
+    { label: 'Auto scale', value: `× ${info.scale.toPrecision(4)} → ${info.fittedSize[1].toFixed(3)} m tall` },
+    { label: 'Fitted size W × H × D', value: `${formatVector(info.fittedSize)} m` },
+    {
+      label: 'Placement check',
+      value: `feet y = ${formatSigned(minY)} · center x = ${formatSigned(centerX)}, z = ${formatSigned(centerZ)}`,
+    },
+    { label: 'Meshes / triangles', value: `${info.meshes} / ${info.triangles.toLocaleString('en-US')}` },
+    { label: 'Materials / textures', value: `${info.materials} / ${info.textures}` },
+    { label: 'Load time', value: `${Math.round(info.loadMs)} ms` },
+  ];
+  if (notes.length) items.push({ label: 'Notes', value: notes.join(' · ') });
+  return <ReadoutList items={items} />;
+}
+
+/**
+ * Subject selector (top of the panel): Default Mannequin or a local glTF/GLB.
+ * Files are read in the browser only (URL.createObjectURL), never uploaded.
+ */
+export function SubjectSelector() {
+  const { subjectType, model } = useSubjectState();
+  const inputRef = useRef(null);
+  const isCustom = subjectType === SUBJECT_TYPES.CUSTOM;
+
+  const handleFiles = (event) => {
+    // Copy before resetting: the FileList is live and empties with the input.
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = ''; // allow re-selecting the same file
+    if (files.length) loadCustomModel(files);
+  };
+
+  const releasedNote = describeReleased(model.lastReleased);
+
+  return (
+    <section className="subject-selector" aria-label="Subject">
+      <span className="subject-selector__title">Subject (피사체)</span>
+      <div className="segmented" role="radiogroup" aria-label="Subject type">
+        {SUBJECT_OPTIONS.map((option) => (
+          <label
+            key={option.value}
+            className={`segmented__option ${subjectType === option.value ? 'segmented__option--active' : ''}`}
+          >
+            <input
+              type="radio"
+              name="subject-type"
+              value={option.value}
+              checked={subjectType === option.value}
+              onChange={() => setSubjectType(option.value)}
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+
+      {isCustom && (
+        <div className="subject-selector__custom">
+          <button type="button" className="button" onClick={() => inputRef.current?.click()}>
+            {model.object ? 'Replace model (.glb / .gltf)…' : 'Upload model (.glb / .gltf)…'}
+          </button>
+          <input
+            ref={inputRef}
+            className="visually-hidden"
+            type="file"
+            accept={MODEL_FILE_ACCEPT}
+            multiple
+            onChange={handleFiles}
+            aria-label="Upload custom 3D model"
+            data-testid="custom-model-input"
+          />
+          <span className="field__hint">
+            Loaded locally in your browser — nothing is uploaded. For a .gltf with separate .bin / texture
+            files, select them all at once. Auto-fitted to {SUBJECT_CONFIG.targetHeightM} m, feet on the floor.
+          </span>
+
+          {model.loadingFileName && (
+            <p className="status-message" role="status">
+              Loading {model.loadingFileName}…
+            </p>
+          )}
+          {model.error && (
+            <p className="status-message status-message--error" role="alert">
+              {model.error}
+              {model.object ? ' The previous model is still shown.' : ''}
+            </p>
+          )}
+          {!model.object && !model.loadingFileName && !model.error && (
+            <p className="status-message">No model loaded yet — the default mannequin is shown meanwhile.</p>
+          )}
+          {model.object && model.info && <ModelReadout info={model.info} />}
+        </div>
+      )}
+      {releasedNote && (
+        <p className="status-message" data-testid="subject-released">
+          {releasedNote}
+        </p>
+      )}
+    </section>
+  );
+}
