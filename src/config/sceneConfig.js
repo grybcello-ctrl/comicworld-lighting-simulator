@@ -19,6 +19,13 @@ export const RENDER_CONFIG = Object.freeze({
   // Calibrated so a 600Ws key at 1/8 power through an octabox at ~1.8m reads
   // as a normal exposure with three.js physically based lighting.
   candelaPerWattSecond: 0.4,
+  // Distance (m) at which on-axis intensity is calibrated for every model.
+  calibrationDistanceM: 1,
+  // Softboxes: RectAreaLight cannot cast shadows in three.js, so this share of
+  // the energy is carried by a soft, shadow-casting SpotLight at the same spot.
+  areaShadowProxyShare: 0.3,
+  // Resolution of the generated SpotLight beam-profile textures.
+  beamProfileTextureSize: 128,
   ambientIntensity: 0.15,
   shadowMapSize: 1024,
   backgroundColor: '#1a1a1d',
@@ -30,3 +37,6 @@ export const PLACEMENT_LIMITS = Object.freeze({
   elevationDeg: { min: -30, max: 85, step: 1 },
   distance: { min: 0.8, max: 5, step: 0.05 },
 });
+
+/** Parabolic focusing rod: 0 = fully focused (spot), 100 = fully flooded. */
+export const FOCUS_ROD_LIMITS = Object.freeze({ min: 0, max: 100, step: 1, default: 30 });

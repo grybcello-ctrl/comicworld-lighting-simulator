@@ -1,12 +1,12 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import { Object3D } from 'three';
-import { getModifierById, getStrobeById } from '../../config/equipmentRegistry.js';
+import { getGridById, getModifierById, getStrobeById } from '../../config/equipmentRegistry.js';
 import { RENDER_CONFIG, SUBJECT_TARGET } from '../../config/sceneConfig.js';
+import { resolveLightRig } from '../../utils/beamModel.js';
+import { getBeamProfileTexture } from '../../utils/beamProfileTexture.js';
 import { kelvinToHex } from '../../utils/colorTemperature.js';
-import { computeLightIntensity, placementToPosition } from '../../utils/lightMath.js';
+import { placementToPosition } from '../../utils/lightMath.js';
 import { MODIFIER_RENDERERS, resolveRenderer, STROBE_BODY_RENDERERS } from './fixtures/index.js';
-
-const DEG_TO_RAD = Math.PI / 180;
 
 /** Simple vertical stand from the floor up to the fixture. */
 function LightStand({ position }) {
@@ -27,12 +27,13 @@ function LightStand({ position }) {
 }
 
 /**
- * Renders one LightInstance: stand, strobe body, modifier, and the actual
- * three.js spot light. All behavior is driven by catalog data.
+ * Renders one LightInstance: stand, strobe body, modifier, and the three.js
+ * lights produced by `resolveLightRig` (SpotLight and/or RectAreaLight).
  */
 export function StudioLight({ light, isSelected, onSelect }) {
   const strobe = getStrobeById(light.strobeId);
   const modifier = getModifierById(light.modifierId);
+  const grid = getGridById(light.gridId);
 
   const fixtureRef = useRef(null);
   const target = useMemo(() => new Object3D(), []);
@@ -47,11 +48,28 @@ export function StudioLight({ light, isSelected, onSelect }) {
     fixtureRef.current?.lookAt(...SUBJECT_TARGET);
   }, [position]);
 
-  if (!strobe || !modifier) return null;
+  const rig = useMemo(
+    () =>
+      strobe && modifier
+        ? resolveLightRig({
+            strobe,
+            modifier,
+            grid,
+            powerLevel: light.powerLevel,
+            focusRod: light.focusRod,
+            distance: light.placement.distance,
+          })
+        : null,
+    [strobe, modifier, grid, light.powerLevel, light.focusRod, light.placement.distance],
+  );
+
+  const beamMap = rig?.spot ? getBeamProfileTexture(rig.spot.profile, rig.spot.angle) : null;
+
+  if (!rig) return null;
 
   const BodyRenderer = resolveRenderer(STROBE_BODY_RENDERERS, strobe.body.shape, 'cylinder');
   const ModifierRenderer = resolveRenderer(MODIFIER_RENDERERS, modifier.geometry.shape, 'none');
-  const { beamAngleDeg, penumbra, shadowSoftness } = modifier.lighting;
+  const color = kelvinToHex(light.colorTempK);
 
   const handleClick = (event) => {
     event.stopPropagation();
@@ -65,29 +83,50 @@ export function StudioLight({ light, isSelected, onSelect }) {
       <group ref={fixtureRef} position={position} onClick={handleClick}>
         {BodyRenderer && <BodyRenderer body={strobe.body} isSelected={isSelected} />}
         {ModifierRenderer && (
-          <ModifierRenderer geometry={modifier.geometry} isLit={light.enabled} />
+          <ModifierRenderer
+            geometry={modifier.geometry}
+            isLit={light.enabled}
+            grid={grid}
+            focusRod={light.focusRod}
+          />
+        )}
+        {rig.area && (
+          // RectAreaLight emits along its local -Z; rotate so it faces the fixture's +Z.
+          <rectAreaLight
+            position={[0, 0, rig.area.offsetZ]}
+            rotation={[0, Math.PI, 0]}
+            width={rig.area.width}
+            height={rig.area.height}
+            intensity={rig.area.intensity}
+            color={color}
+            visible={light.enabled}
+          />
         )}
       </group>
 
       <primitive object={target} position={SUBJECT_TARGET} />
-      <spotLight
-        position={position}
-        target={target}
-        visible={light.enabled}
-        intensity={computeLightIntensity(strobe, modifier, light.powerStops)}
-        color={kelvinToHex(light.colorTempK)}
-        angle={Math.min((beamAngleDeg / 2) * DEG_TO_RAD, Math.PI / 2 - 0.01)}
-        penumbra={penumbra}
-        decay={2}
-        distance={0}
-        castShadow
-        shadow-mapSize={[RENDER_CONFIG.shadowMapSize, RENDER_CONFIG.shadowMapSize]}
-        shadow-bias={-0.0004}
-        shadow-normalBias={0.02}
-        shadow-radius={shadowSoftness}
-        shadow-camera-near={0.1}
-        shadow-camera-far={20}
-      />
+      {rig.spot && (
+        <spotLight
+          position={position}
+          target={target}
+          visible={light.enabled}
+          intensity={rig.spot.intensity}
+          color={color}
+          angle={rig.spot.angle}
+          penumbra={rig.spot.penumbra}
+          decay={rig.spot.decay}
+          distance={0}
+          // `map` must be explicitly null to clear a previous profile.
+          map={beamMap}
+          castShadow
+          shadow-mapSize={[RENDER_CONFIG.shadowMapSize, RENDER_CONFIG.shadowMapSize]}
+          shadow-bias={-0.0004}
+          shadow-normalBias={0.02}
+          shadow-radius={rig.spot.shadowRadius}
+          shadow-camera-near={0.1}
+          shadow-camera-far={20}
+        />
+      )}
     </group>
   );
 }

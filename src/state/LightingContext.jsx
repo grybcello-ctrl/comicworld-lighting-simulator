@@ -2,10 +2,12 @@ import { createContext, useContext, useMemo, useReducer } from 'react';
 import {
   getCompatibleModifiers,
   getStrobeById,
+  isGridCompatible,
   isModifierCompatible,
 } from '../config/equipmentRegistry.js';
 import { DEFAULT_PRESET_ID, getPresetById } from '../config/lightingPresets.js';
-import { clamp } from '../utils/lightMath.js';
+import { FOCUS_ROD_LIMITS } from '../config/sceneConfig.js';
+import { clamp, snapPowerLevel } from '../utils/lightMath.js';
 
 /**
  * A light instance placed in the scene. It only stores catalog *ids*;
@@ -15,8 +17,10 @@ import { clamp } from '../utils/lightMath.js';
  * @property {string} label
  * @property {string} strobeId
  * @property {string} modifierId
+ * @property {string | null} gridId  Grid fitted to the modifier, if any.
  * @property {boolean} enabled
- * @property {number} powerStops      0 = full, negative = reduced.
+ * @property {number} powerLevel     Connect-style scale: 10.0 = full, -1.0 = -1 stop.
+ * @property {number} focusRod       Parabolic focusing rod, 0 = spot .. 100 = flood.
  * @property {number} colorTempK
  * @property {{ azimuthDeg: number, elevationDeg: number, distance: number }} placement
  */
@@ -25,26 +29,52 @@ let lightIdCounter = 0;
 const createLightId = () => `light-${++lightIdCounter}`;
 
 const DEFAULT_PLACEMENT = { azimuthDeg: 30, elevationDeg: 20, distance: 2 };
+const DEFAULT_POWER_LEVEL = 7;
+
+/**
+ * Enforces catalog invariants: modifier fits the strobe, grid fits the
+ * modifier, power level and focus rod are within range.
+ */
+function normalizeLight(light) {
+  const strobe = getStrobeById(light.strobeId);
+  if (!strobe) return light;
+  const modifierId = isModifierCompatible(light.strobeId, light.modifierId)
+    ? light.modifierId
+    : getCompatibleModifiers(light.strobeId)[0]?.id;
+  return {
+    ...light,
+    modifierId,
+    gridId: light.gridId && isGridCompatible(modifierId, light.gridId) ? light.gridId : null,
+    powerLevel: snapPowerLevel(light.powerLevel, strobe.powerLevelRange),
+    focusRod: clamp(Math.round(light.focusRod), FOCUS_ROD_LIMITS.min, FOCUS_ROD_LIMITS.max),
+  };
+}
 
 /** Builds a valid LightInstance, filling defaults from the strobe spec. */
-export function createLightInstance({ strobeId, modifierId, label, powerStops, placement }) {
+export function createLightInstance({
+  strobeId,
+  modifierId,
+  gridId = null,
+  label,
+  powerLevel = DEFAULT_POWER_LEVEL,
+  focusRod = FOCUS_ROD_LIMITS.default,
+  placement,
+}) {
   const strobe = getStrobeById(strobeId);
   if (!strobe) throw new Error(`Unknown strobe id: "${strobeId}"`);
 
-  const resolvedModifierId = isModifierCompatible(strobeId, modifierId)
-    ? modifierId
-    : getCompatibleModifiers(strobeId)[0]?.id;
-
-  return {
+  return normalizeLight({
     id: createLightId(),
     label: label ?? strobe.name,
     strobeId,
-    modifierId: resolvedModifierId,
+    modifierId,
+    gridId,
     enabled: true,
-    powerStops: clamp(powerStops ?? -3, strobe.powerRange.minStops, strobe.powerRange.maxStops),
+    powerLevel,
+    focusRod,
     colorTempK: strobe.colorTempK,
     placement: { ...DEFAULT_PLACEMENT, ...placement },
-  };
+  });
 }
 
 const buildLightsFromPreset = (presetId) =>
@@ -55,19 +85,11 @@ function createInitialState() {
   return { lights, selectedLightId: lights[0]?.id ?? null };
 }
 
-/** Keeps a light consistent after its strobe has been swapped. */
+/** Swapping strobes resets color temperature to the new unit's native value. */
 function applyStrobeChange(light, nextStrobeId) {
   const strobe = getStrobeById(nextStrobeId);
   if (!strobe) return light;
-  return {
-    ...light,
-    strobeId: nextStrobeId,
-    modifierId: isModifierCompatible(nextStrobeId, light.modifierId)
-      ? light.modifierId
-      : getCompatibleModifiers(nextStrobeId)[0]?.id,
-    powerStops: clamp(light.powerStops, strobe.powerRange.minStops, strobe.powerRange.maxStops),
-    colorTempK: strobe.colorTempK,
-  };
+  return { ...light, strobeId: nextStrobeId, colorTempK: strobe.colorTempK };
 }
 
 function lightingReducer(state, action) {
@@ -86,7 +108,7 @@ function lightingReducer(state, action) {
           const { strobeId, ...otherChanges } = action.changes;
           const withStrobe =
             strobeId && strobeId !== light.strobeId ? applyStrobeChange(light, strobeId) : light;
-          return { ...withStrobe, ...otherChanges };
+          return normalizeLight({ ...withStrobe, ...otherChanges });
         }),
       };
 
