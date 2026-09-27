@@ -61,11 +61,29 @@ export const SHADOW_CONFIG = Object.freeze({
   // r186's PCF uses 5 Vogel taps; beyond ~16 texels the blur turns grainy, so
   // wider penumbrae switch to coarser texels instead (see shadowModel.js).
   maxRadius: 16,
-  depthBias: -0.0002,
-  // normalBias = texel world size * factor (clamped), avoids acne on big texels.
-  normalBiasTexels: 1.5,
-  minNormalBias: 0.002,
-  maxNormalBias: 0.04,
+  // --- Bias (acne vs. light leaking through thin meshes; see shadowModel.js) ---
+  // Depth bias as a world distance at the subject, converted per light into
+  // three's perspective depth units. A fixed depth-unit bias (the old -0.0002)
+  // grows ∝ d² in world space: ~1.6 cm at 2 m, ~10 cm at 5 m — thin meshes
+  // closer than that to a surface stopped casting shadows.
+  worldDepthBiasM: 0.002,
+  // Safety cap on the converted value (three.js depth units).
+  maxDepthBias: 0.0005,
+  // normalBias (world m) = texel size × factor, clamped. Zero by default:
+  // three.js offsets along the vertex normal, which is NOT flipped on the back
+  // face of a double-sided card, so any positive value pushes the lit back side
+  // of a hair card into its own shadow (measured: 4% of pixels dotted at 0.25
+  // texel, 0% at 0). Closed solids use back-face shadows and don't need it.
+  normalBiasTexels: 0,
+  minNormalBias: 0,
+  maxNormalBias: 0.01,
+  // Slope-scaled depth offset for subject casters (glPolygonOffset in the
+  // shadow pass): factor = base + perRadius × shadow.radius. The PCF kernel
+  // compares depths `radius` texels away, so the offset follows the kernel.
+  // Higher = less self-shadowing on hair cards, but weaker shadows in small gaps.
+  slopeBiasBase: 1.5,
+  slopeBiasPerRadius: 1,
+  slopeBiasUnits: 1,
   cameraNearM: 0.05,
   // Shadow camera far plane = distance to subject + margin (tighter = more depth precision).
   cameraFarMarginM: 6,
@@ -154,6 +172,13 @@ export const SUBJECT_CONFIG = Object.freeze({
   targetHeightM: 1.725,
   // The main file of an upload; exactly one per selection.
   modelExtensions: ['.glb', '.gltf'],
+  // Custom-model shadow sides (utils/shadowSides.js):
+  //   'auto'   thin sheets DoubleSide, closed solids BackSide (no self-shadowing)
+  //   'double' every material shadowSide = DoubleSide
+  shadowSideMode: 'auto',
+  // Surfaces with boundary length / √area above this are thin sheets
+  // (flat sheets ≥ 3.54; open tubes like sleeves ≈ 1.6; closed solids 0).
+  thinSurfaceOpenness: 1.8,
   // File-picker filter hint for resources a .gltf may reference. Every other
   // selected file is mapped too, whatever its extension (modelFileSet.js).
   resourceExtensionHints: ['.bin', '.png', '.jpg', '.jpeg', '.webp', '.avif', '.ktx2'],

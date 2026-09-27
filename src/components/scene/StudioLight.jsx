@@ -88,6 +88,15 @@ export function StudioLight({ light, isSelected, showFixture = true, showLightRa
 
   const spot = rig?.spot;
   const shadow = spot?.shadow;
+
+  // Per-light slope bias for subject casters (utils/shadowSides.js reads it in
+  // the shadow pass). It changes the depth map, so it is a shadow dependency.
+  const slopeFactor = shadow?.slopeBias.factor;
+  const slopeUnits = shadow?.slopeBias.units;
+  useLayoutEffect(() => {
+    const shadowCamera = spotRef.current?.shadow?.camera;
+    if (shadowCamera) shadowCamera.userData.slopeBias = { factor: slopeFactor, units: slopeUnits };
+  }, [slopeFactor, slopeUnits, Boolean(spot)]); // eslint-disable-line react-hooks/exhaustive-deps
   // Parabolics: SpotLight at the virtual apex on the beam axis (beamModel.js).
   const spotPosition = useMemo(() => selectSpotPosition(pose, spot), [pose, spot]);
   useOnDemandShadow(spotRef, {
@@ -99,6 +108,7 @@ export function StudioLight({ light, isSelected, showFixture = true, showLightRa
       spot?.apexOffsetM,
       shadow?.cameraNear,
       shadow?.cameraFar,
+      slopeFactor,
       light.enabled,
     ],
   });
@@ -182,6 +192,7 @@ export function StudioLight({ light, isSelected, showFixture = true, showLightRa
           map={beamMap}
           castShadow
           // Apparent-size shadows (utils/shadowModel.js): radius ∝ source size / distance.
+          // bias = 2 mm at the subject in depth units; normalBias per SHADOW_CONFIG.
           shadow-mapSize={[shadow.mapSize, shadow.mapSize]}
           shadow-radius={shadow.radius}
           shadow-bias={shadow.bias}

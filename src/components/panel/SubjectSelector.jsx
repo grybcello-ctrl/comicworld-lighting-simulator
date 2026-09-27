@@ -31,6 +31,13 @@ function ModelReadout({ info }) {
   const [centerX, , centerZ] = info.fittedCenter;
   const notes = [];
   if (info.unlitMaterialsConverted) notes.push(`${info.unlitMaterialsConverted} unlit material(s) made PBR`);
+  if (info.doubleSidedMaterials) {
+    notes.push(
+      `double-sided: ${info.thinMaterials} thin (shadows from both faces), ${info.solidMaterials} solid (back-face shadows)${
+        info.clonedMaterials ? `, ${info.clonedMaterials} split` : ''
+      }${info.topologyAnalysed ? '' : ' — model too large to analyse, all treated as thin'}`,
+    );
+  }
   if (info.strippedLights || info.strippedCameras) {
     notes.push(`removed ${info.strippedLights} embedded light(s), ${info.strippedCameras} camera(s)`);
   }

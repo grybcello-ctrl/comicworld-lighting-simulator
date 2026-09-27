@@ -35,6 +35,8 @@ src/
 │  ├─ modelFileSet.js         # Multi-file .gltf: main file + Blob URL map + URL modifier
 │  ├─ blobUrlRegistry.js      # Tracks and revokes a model's Blob URLs
 │  ├─ textureColorSpace.js    # Ensures color textures are SRGBColorSpace
+│  ├─ shadowSides.js          # Double-sided materials, shadow sides, slope bias
+│  ├─ meshTopology.js         # Thin sheet vs closed solid (boundary length / √area)
 │  ├─ modelPreparation.js     # Shadows, unlit → PBR, Box3 auto-fit
 │  ├─ disposeObject3D.js      # Frees geometries, materials, textures, bitmaps
 │  ├─ skinTexture.js          # Procedural skin normal + roughness maps
@@ -147,3 +149,17 @@ Light instances only store `strobeId` / `modifierId`, and the specs are always r
 - **Blob URL clean-up:** all Blob URLs of a model (main file, `.bin`, textures) are tracked in one registry that the model owns.
   - They are revoked together with `dispose()` when the model is replaced or removed.
   - A failed or cancelled load revokes its URLs immediately and disposes any textures it had already decoded.
+
+### Thin meshes and shadow bias
+
+- **Problem:** three.js puts only the back faces of a single-sided material into the shadow map. A hair card or plane whose front faces the light therefore cast no shadow, so a rim light shone straight through the hair.
+- **Materials (custom models):** every material is set to `side = DoubleSide`.
+  - Thin sheets (hair cards, planes, single-sheet cloth) get `shadowSide = DoubleSide`, so they block light from both faces.
+  - Closed solids (skin, body, props) get `shadowSide = BackSide`. They cast the same shadows but can never shadow themselves.
+  - Sheets and solids are told apart by topology: boundary length / √area (`meshTopology.js`). A material shared by both kinds is split into two, and the textures stay shared.
+  - `SUBJECT_CONFIG.shadowSideMode = 'double'` forces DoubleSide shadows on everything.
+- **Depth bias:** `shadow.bias` is now a world distance (2 mm at the subject) converted to depth units for each light: `−b · near·far / ((far − near)·D²)`.
+  - The old constant −0.0002 grew with the square of the distance (≈2.4 cm at 1.4 m, ≈10 cm at 5 m), so thin meshes closer than that to a surface stopped casting shadows.
+- **Slope bias:** each subject mesh gets a per-light `glPolygonOffset` in the shadow pass, with factor `1.5 + shadow.radius` (the PCF kernel size). This keeps double-sided sheets and thin solids such as ears from shadowing themselves under soft lights.
+- **Normal bias:** `shadow.normalBias` is 0. three.js offsets along the vertex normal, which is not flipped on a double-sided card's back face, so any positive value darkens the lit back side of hair cards.
+- **Unchanged:** radius, map size, texel size, penumbra and the parabolic rig are identical to before.

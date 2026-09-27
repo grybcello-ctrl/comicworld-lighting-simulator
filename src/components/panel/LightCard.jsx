@@ -85,6 +85,11 @@ function BeamReadout({ rig, pose }) {
       label: 'shadow.radius',
       value: `${shadow.radius.toFixed(2)} · ${shadow.mapSize}² @ ${(shadow.texelM * 1000).toFixed(1)} mm`,
     },
+    {
+      label: 'shadow.bias / normalBias',
+      value: `${shadow.bias.toExponential(2)} (${(shadow.biasWorldM * 1000).toFixed(1)} mm) / ${(shadow.normalBias * 1000).toFixed(1)} mm`,
+    },
+    { label: 'Slope bias (shadow pass)', value: `× ${shadow.slopeBias.factor.toFixed(1)}` },
   ];
   if (info.emitterAreaM2) {
     items.push({ label: 'Emitting area', value: `${info.emitterAreaM2.toFixed(3)} m²` });
