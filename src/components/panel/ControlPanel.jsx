@@ -1,7 +1,9 @@
 import { LIGHTING_PRESETS } from '../../config/lightingPresets.js';
+import { CAMERA_VIEWS } from '../../config/sceneConfig.js';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
 import { AddLightForm } from './AddLightForm.jsx';
 import { LightCard } from './LightCard.jsx';
+import { SetupFileControls } from './SetupFileControls.jsx';
 
 function PresetPicker() {
   const { loadPreset } = useLightingActions();
@@ -42,6 +44,26 @@ function FixtureVisibilityToggle() {
   );
 }
 
+/** Camera framings; the face close-up is for inspecting skin texture. */
+function CameraViewButtons() {
+  const { cameraView } = useLightingState();
+  const { setCameraView } = useLightingActions();
+  return (
+    <div className="button-row" role="group" aria-label="Camera view">
+      {Object.entries(CAMERA_VIEWS).map(([id, view]) => (
+        <button
+          key={id}
+          type="button"
+          className={`button button--small ${cameraView.id === id ? 'button--active' : ''}`}
+          onClick={() => setCameraView(id)}
+        >
+          {view.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ControlPanel() {
   const { lights, selectedLightId } = useLightingState();
 
@@ -51,9 +73,11 @@ export function ControlPanel() {
         <h1>Studio Lighting</h1>
         <p>Drag to orbit · Scroll to zoom · Click a light to select it</p>
         <FixtureVisibilityToggle />
+        <CameraViewButtons />
       </header>
 
       <PresetPicker />
+      <SetupFileControls />
       <AddLightForm />
 
       <section className="panel-section">

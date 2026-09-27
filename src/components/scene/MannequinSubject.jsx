@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Quaternion, Vector3 } from 'three';
+import { getSkinMaterial, skinRepeatFor } from '../../utils/skinMaterial.js';
 
 /**
  * Placeholder subject: a full-body artist's mannequin (~1.75 m, ≈7.5 heads
@@ -9,10 +10,11 @@ import { Quaternion, Vector3 } from 'three';
  *
  * All joint positions are for the subject's LEFT side (+X); the right side is
  * mirrored. Units: meters.
+ *
+ * Surfaces use a PBR skin material with a procedural micro-relief normal map
+ * (utils/skinTexture.js). UV repeats are derived from each part's world size so
+ * pores and furrows have the same physical scale everywhere.
  */
-
-const SKIN_MATERIAL_PROPS = { color: '#c9c4bd', roughness: 0.55, metalness: 0 };
-const JOINT_MATERIAL_PROPS = { color: '#b7b1a9', roughness: 0.5, metalness: 0 };
 
 const UP = new Vector3(0, 1, 0);
 
@@ -29,25 +31,35 @@ const JOINTS = Object.freeze({
 /** Mirrors a left-side point to the right side. */
 const mirror = ([x, y, z], side) => [x * side, y, z];
 
-function BodyMaterial({ joint = false }) {
-  return <meshStandardMaterial {...(joint ? JOINT_MATERIAL_PROPS : SKIN_MATERIAL_PROPS)} />;
-}
+/** Ramanujan's approximation of an ellipse perimeter. */
+const ellipsePerimeter = (a, b) => Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
 
 /** Ellipsoid body part (unit sphere scaled to radii). */
 function Ellipsoid({ position, radii, rotation }) {
+  const [rx, ry, rz] = radii;
+  const material = useMemo(
+    () =>
+      getSkinMaterial({
+        // U runs around Y (equator), V pole to pole (half a meridian).
+        repeat: skinRepeatFor(ellipsePerimeter(rx, rz), ellipsePerimeter((rx + rz) / 2, ry) / 2),
+      }),
+    [rx, ry, rz],
+  );
   return (
-    <mesh position={position} rotation={rotation} scale={radii} castShadow receiveShadow>
-      <sphereGeometry args={[1, 40, 28]} />
-      <BodyMaterial />
+    <mesh position={position} rotation={rotation} scale={radii} material={material} castShadow receiveShadow>
+      <sphereGeometry args={[1, 48, 32]} />
     </mesh>
   );
 }
 
 function Joint({ position, radius }) {
+  const material = useMemo(
+    () => getSkinMaterial({ repeat: skinRepeatFor(2 * Math.PI * radius, Math.PI * radius), variant: 'joint' }),
+    [radius],
+  );
   return (
-    <mesh position={position} castShadow receiveShadow>
-      <sphereGeometry args={[radius, 20, 14]} />
-      <BodyMaterial joint />
+    <mesh position={position} material={material} castShadow receiveShadow>
+      <sphereGeometry args={[radius, 24, 16]} />
     </mesh>
   );
 }
@@ -65,11 +77,14 @@ function Limb({ from, to, radiusFrom, radiusTo }) {
       length: direction.length(),
     };
   }, [from, to]);
+  const material = useMemo(
+    () => getSkinMaterial({ repeat: skinRepeatFor(Math.PI * (radiusFrom + radiusTo), length) }),
+    [radiusFrom, radiusTo, length],
+  );
 
   return (
-    <mesh position={position} quaternion={quaternion} castShadow receiveShadow>
-      <cylinderGeometry args={[radiusFrom, radiusTo, length, 24]} />
-      <BodyMaterial />
+    <mesh position={position} quaternion={quaternion} material={material} castShadow receiveShadow>
+      <cylinderGeometry args={[radiusFrom, radiusTo, length, 32]} />
     </mesh>
   );
 }
@@ -110,15 +125,22 @@ function Leg({ side }) {
   );
 }
 
+const NOSE_MATERIAL = getSkinMaterial({ repeat: skinRepeatFor(Math.PI * 0.016, 0.043) });
+
 export function MannequinSubject() {
   return (
     <group name="mannequin-subject">
       {/* Head (center = SUBJECT_TARGET) */}
       <Ellipsoid position={[0, 1.62, 0]} radii={[0.078, 0.105, 0.095]} />
       {/* Nose — gives an obvious facing direction for judging light angles */}
-      <mesh position={[0, 1.61, 0.1]} rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
+      <mesh
+        position={[0, 1.61, 0.1]}
+        rotation={[Math.PI / 2, 0, 0]}
+        material={NOSE_MATERIAL}
+        castShadow
+        receiveShadow
+      >
         <coneGeometry args={[0.016, 0.04, 16]} />
-        <BodyMaterial />
       </mesh>
       {/* Brow ridge */}
       <Ellipsoid position={[0, 1.645, 0.075]} radii={[0.06, 0.012, 0.025]} />

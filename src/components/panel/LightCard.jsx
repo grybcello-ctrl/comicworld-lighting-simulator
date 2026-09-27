@@ -2,16 +2,14 @@ import { LIGHT_MODELS } from '../../config/equipmentConfig.js';
 import {
   getCompatibleGels,
   getCompatibleGrids,
-  getGelById,
-  getGridById,
-  groupGelsByCategory,
   getModifierById,
   getStrobeById,
+  groupGelsByCategory,
 } from '../../config/equipmentRegistry.js';
 import { FOCUS_ROD_LIMITS, PLACEMENT_LIMITS } from '../../config/sceneConfig.js';
-import { useLightingActions } from '../../state/LightingContext.jsx';
-import { resolveLightRig } from '../../utils/beamModel.js';
-import { kelvinToHex, resolveLightColor } from '../../utils/colorTemperature.js';
+import { DEFAULT_PLACEMENT, useLightingActions } from '../../state/LightingContext.jsx';
+import { selectFixturePose, selectLightColor, selectLightRig } from '../../state/lightSelectors.js';
+import { kelvinToHex } from '../../utils/colorTemperature.js';
 import { formatPowerLevel, formatWs, powerLevelToWs, snapPowerLevel } from '../../utils/lightMath.js';
 import { EquipmentPicker } from './EquipmentPicker.jsx';
 import {
@@ -21,21 +19,24 @@ import {
   SelectField,
   SliderField,
   ToggleField,
+  ToggleSection,
 } from './fields.jsx';
 
 const formatDegrees = (value) => `${value}°`;
+const formatSignedDegrees = (value) => `${value > 0 ? '+' : ''}${value}°`;
 const formatMeters = (value) => `${value.toFixed(2)} m`;
+const formatShift = (value) => `${value > 0 ? '+' : ''}${value.toFixed(2)} m`;
 const formatKelvin = (value) => `${value} K`;
 const formatStops = (value) => `${value >= 0 ? '+' : ''}${value.toFixed(1)} EV`;
+const formatCm = (meters) => `${(meters * 100).toFixed(meters < 0.1 ? 1 : 0)} cm`;
 
-const NO_GEL_GROUP = { key: 'none', label: 'None', items: [{ id: '', name: 'No gel' }] };
+const SHIFT_KEYS = ['shiftX', 'shiftY', 'shiftZ', 'tiltDeg', 'panDeg', 'rollDeg'];
 
-/** Resulting light color after Kelvin × gel spectral mixing. */
-function ColorReadout({ light, gel }) {
-  const color = resolveLightColor(light.colorTempK, gel);
+/** Resulting light color after the Kelvin/gel toggles and spectral mixing. */
+function ColorReadout({ color, gelActive }) {
   const items = [
     {
-      label: 'Emitted color',
+      label: 'Emitted color (light.color)',
       value: (
         <span className="readout__swatch-value">
           <ColorSwatch color={color.displayHex} />
@@ -48,7 +49,7 @@ function ColorReadout({ light, gel }) {
       value: color.cctK ? `≈ ${Math.round(color.cctK / 10) * 10} K` : '— (saturated color)',
     },
   ];
-  if (gel) {
+  if (gelActive) {
     items.push({
       label: 'Gel transmission',
       value: `${(color.transmission * 100).toFixed(0)} % (−${color.lossStops.toFixed(1)} EV)`,
@@ -57,31 +58,166 @@ function ColorReadout({ light, gel }) {
   return <ReadoutList items={items} />;
 }
 
-/** Computed beam parameters, so users can see what the physics resolved to. */
-function BeamReadout({ light, strobe, modifier }) {
-  const rig = resolveLightRig({
-    strobe,
-    modifier,
-    grid: getGridById(light.gridId),
-    powerLevel: light.powerLevel,
-    focusRod: light.focusRod,
-    distance: light.placement.distance,
-  });
+/** Computed beam and shadow parameters, so users can see what the physics resolved to. */
+function BeamReadout({ rig, pose }) {
   const { info } = rig;
+  const { shadow } = info;
   const items = [
+    { label: '3D distance to subject', value: formatMeters(pose.distanceToSubject) },
+    { label: 'Subject off beam axis', value: `${pose.subjectOffAxisDeg.toFixed(1)}°` },
     { label: 'Beam angle', value: `${info.beamAngleDeg.toFixed(1)}°` },
-    { label: 'Penumbra', value: info.penumbra.toFixed(2) },
+    { label: 'Penumbra (edge)', value: info.penumbra.toFixed(2) },
     {
       label: rig.model === LIGHT_MODELS.AREA ? 'Falloff exponent (near field)' : 'Decay',
       value: info.decay.toFixed(2),
     },
     { label: 'Footprint at subject', value: `Ø ${info.footprintM.toFixed(2)} m` },
     { label: 'Center gain / losses', value: `${formatStops(info.gainStops)} / ${formatStops(-info.lossStops)}` },
+    { label: 'Effective emitter', value: `Ø ${formatCm(info.sourceDiameterM)}` },
+    { label: 'Apparent size', value: `${shadow.apparentSizeDeg.toFixed(1)}°` },
+    { label: 'Shadow penumbra (10 cm gap)', value: formatCm(shadow.penumbraM) },
+    {
+      label: 'shadow.radius',
+      value: `${shadow.radius.toFixed(2)} · ${shadow.mapSize}² @ ${(shadow.texelM * 1000).toFixed(1)} mm`,
+    },
   ];
   if (info.emitterAreaM2) {
     items.push({ label: 'Emitting area', value: `${info.emitterAreaM2.toFixed(3)} m²` });
   }
   return <ReadoutList items={items} />;
+}
+
+/** Grid + inner diffuser controls for modifiers that support them. */
+function AccessoryControls({ light, modifier, update }) {
+  const grids = getCompatibleGrids(light.modifierId);
+  const diffuser = modifier?.accessories?.innerDiffuser;
+  if (grids.length === 0 && !diffuser) return null;
+
+  return (
+    <>
+      <h3 className="light-card__subtitle">Accessories</h3>
+      <div className="button-row">
+        {diffuser && (
+          <ToggleField
+            label={`${diffuser.name} (−${diffuser.lightLossStops} EV, softer shadows)`}
+            checked={light.innerDiffuser}
+            onChange={(innerDiffuser) => update({ innerDiffuser })}
+          />
+        )}
+        {grids.length === 1 && (
+          <ToggleField
+            label={`Grid · ${grids[0].name}`}
+            checked={light.gridId === grids[0].id}
+            onChange={(on) => update({ gridId: on ? grids[0].id : null })}
+          />
+        )}
+      </div>
+      {grids.length > 1 && (
+        <SelectField
+          label="Grid"
+          value={light.gridId}
+          options={[
+            { value: null, label: 'No grid' },
+            ...grids.map((grid) => ({ value: grid.id, label: grid.name })),
+          ]}
+          onChange={(gridId) => update({ gridId })}
+        />
+      )}
+    </>
+  );
+}
+
+function ColorControls({ light, strobe, color, update }) {
+  const compatibleGels = getCompatibleGels(light.strobeId);
+  const gelsAvailable = compatibleGels.length > 0;
+  return (
+    <>
+      <h3 className="light-card__subtitle">Color</h3>
+      <ToggleSection
+        label="Color temperature"
+        checked={light.colorTempEnabled}
+        onChange={(colorTempEnabled) => update({ colorTempEnabled })}
+        hint={light.colorTempEnabled ? null : 'Off: neutral white light (#FFFFFF, D65 white point).'}
+      >
+        <SliderField
+          label="Kelvin"
+          value={light.colorTempK}
+          min={strobe.colorTempRange.minK}
+          max={strobe.colorTempRange.maxK}
+          step={strobe.colorTempRange.stepK}
+          disabled={!light.colorTempEnabled}
+          onChange={(colorTempK) => update({ colorTempK })}
+          formatValue={(kelvin) => (
+            <span className="readout__swatch-value">
+              <ColorSwatch color={kelvinToHex(kelvin)} />
+              {formatKelvin(kelvin)}
+            </span>
+          )}
+          hint="3200K tungsten · 5600K daylight flash · 6500K D65"
+        />
+      </ToggleSection>
+      <ToggleSection
+        label="Color gel (OCF)"
+        checked={light.gelEnabled}
+        disabled={!gelsAvailable}
+        onChange={(gelEnabled) => update({ gelEnabled })}
+        hint={gelsAvailable ? null : 'OCF gels fit Profoto B10-series heads only.'}
+      >
+        {gelsAvailable && (
+          <GroupedSelectField
+            label="Gel"
+            value={light.gelId ?? compatibleGels[0].id}
+            groups={groupGelsByCategory(compatibleGels)}
+            disabled={!light.gelEnabled}
+            onChange={(gelId) => update({ gelId })}
+          />
+        )}
+      </ToggleSection>
+      <ColorReadout color={color} gelActive={light.gelEnabled} />
+    </>
+  );
+}
+
+function PlacementControls({ light, place }) {
+  const { placement } = light;
+  const slider = (key, label, formatValue) => (
+    <SliderField
+      key={key}
+      label={label}
+      value={placement[key]}
+      {...PLACEMENT_LIMITS[key]}
+      onChange={(value) => place({ [key]: value })}
+      formatValue={formatValue}
+    />
+  );
+  const isOffset = SHIFT_KEYS.some((key) => placement[key] !== DEFAULT_PLACEMENT[key]);
+
+  return (
+    <>
+      <h3 className="light-card__subtitle">Placement · orbit (re-aims at subject)</h3>
+      {slider('azimuthDeg', 'Azimuth', formatDegrees)}
+      {slider('elevationDeg', 'Elevation', formatDegrees)}
+      {slider('distance', 'Distance', formatMeters)}
+
+      <h3 className="light-card__subtitle">Shift · translate X / Y / Z (keeps aim)</h3>
+      {slider('shiftX', 'Shift X (left − / right +)', formatShift)}
+      {slider('shiftY', 'Shift Y (down − / up +)', formatShift)}
+      {slider('shiftZ', 'Shift Z (back − / front +)', formatShift)}
+
+      <h3 className="light-card__subtitle">Tilt · rotation (re-aims)</h3>
+      {slider('tiltDeg', 'Tilt (down − / up +)', formatSignedDegrees)}
+      {slider('panDeg', 'Pan (left − / right +, seen from behind)', formatSignedDegrees)}
+      {slider('rollDeg', 'Roll (clockwise +, seen from behind)', formatSignedDegrees)}
+      <button
+        type="button"
+        className="button button--small"
+        disabled={!isOffset}
+        onClick={() => place(Object.fromEntries(SHIFT_KEYS.map((key) => [key, DEFAULT_PLACEMENT[key]])))}
+      >
+        Reset shift & tilt
+      </button>
+    </>
+  );
 }
 
 export function LightCard({ light, isSelected }) {
@@ -90,10 +226,10 @@ export function LightCard({ light, isSelected }) {
   const modifier = getModifierById(light.modifierId);
   if (!strobe) return null;
 
-  const grids = getCompatibleGrids(light.modifierId);
-  const compatibleGels = getCompatibleGels(light.strobeId);
-  const gel = getGelById(light.gelId);
-  const lightHex = resolveLightColor(light.colorTempK, gel).displayHex;
+  // Same selectors as the 3D scene -> the panel always matches the render.
+  const pose = selectFixturePose(light);
+  const rig = selectLightRig(light, pose);
+  const color = selectLightColor(light);
   const isParabolic = modifier?.lighting.model === LIGHT_MODELS.PARABOLIC;
 
   const update = (changes) => updateLight(light.id, changes);
@@ -104,7 +240,7 @@ export function LightCard({ light, isSelected }) {
       <header className="light-card__header" onClick={() => selectLight(light.id)}>
         <span
           className={`light-card__dot ${light.enabled ? 'light-card__dot--on' : ''}`}
-          style={light.enabled ? { '--dot-color': lightHex } : undefined}
+          style={light.enabled ? { '--dot-color': color.displayHex } : undefined}
         />
         <div className="light-card__titles">
           <strong>{light.label}</strong>
@@ -133,18 +269,7 @@ export function LightCard({ light, isSelected }) {
             onStrobeChange={(strobeId) => update({ strobeId })}
             onModifierChange={(modifierId) => update({ modifierId })}
           />
-
-          {grids.length > 0 && (
-            <SelectField
-              label="Grid"
-              value={light.gridId}
-              options={[
-                { value: null, label: 'No grid' },
-                ...grids.map((grid) => ({ value: grid.id, label: grid.name })),
-              ]}
-              onChange={(gridId) => update({ gridId })}
-            />
-          )}
+          <AccessoryControls light={light} modifier={modifier} update={update} />
 
           <h3 className="light-card__subtitle">Output</h3>
           <SliderField
@@ -165,60 +290,14 @@ export function LightCard({ light, isSelected }) {
               max={FOCUS_ROD_LIMITS.max}
               step={FOCUS_ROD_LIMITS.step}
               onChange={(focusRod) => update({ focusRod })}
-              hint="0 = focused spot (punchy) · 100 = flooded (wide, soft)"
+              hint="0 = spot (small source, hard shadows) · 100 = flood (whole dish glows, soft shadows)"
             />
           )}
-          <h3 className="light-card__subtitle">Color</h3>
-          <SliderField
-            label="Color temperature"
-            value={light.colorTempK}
-            min={strobe.colorTempRange.minK}
-            max={strobe.colorTempRange.maxK}
-            step={strobe.colorTempRange.stepK}
-            onChange={(colorTempK) => update({ colorTempK })}
-            formatValue={(kelvin) => (
-              <span className="readout__swatch-value">
-                <ColorSwatch color={kelvinToHex(kelvin)} />
-                {formatKelvin(kelvin)}
-              </span>
-            )}
-            hint="3200K tungsten · 5600K daylight flash · 6500K D65 (neutral white on screen)"
-          />
-          {compatibleGels.length > 0 ? (
-            <GroupedSelectField
-              label="Color gel (OCF)"
-              value={light.gelId ?? ''}
-              groups={[NO_GEL_GROUP, ...groupGelsByCategory(compatibleGels)]}
-              onChange={(gelId) => update({ gelId: gelId || null })}
-            />
-          ) : (
-            <p className="field__hint">OCF gels fit Profoto B10-series heads only.</p>
-          )}
-          <ColorReadout light={light} gel={gel} />
-          {modifier && <BeamReadout light={light} strobe={strobe} modifier={modifier} />}
 
-          <h3 className="light-card__subtitle">Placement</h3>
-          <SliderField
-            label="Azimuth"
-            value={light.placement.azimuthDeg}
-            {...PLACEMENT_LIMITS.azimuthDeg}
-            onChange={(azimuthDeg) => place({ azimuthDeg })}
-            formatValue={formatDegrees}
-          />
-          <SliderField
-            label="Elevation"
-            value={light.placement.elevationDeg}
-            {...PLACEMENT_LIMITS.elevationDeg}
-            onChange={(elevationDeg) => place({ elevationDeg })}
-            formatValue={formatDegrees}
-          />
-          <SliderField
-            label="Distance"
-            value={light.placement.distance}
-            {...PLACEMENT_LIMITS.distance}
-            onChange={(distance) => place({ distance })}
-            formatValue={formatMeters}
-          />
+          <ColorControls light={light} strobe={strobe} color={color} update={update} />
+          {rig && <BeamReadout rig={rig} pose={pose} />}
+
+          <PlacementControls light={light} place={place} />
 
           <button type="button" className="button button--danger" onClick={() => removeLight(light.id)}>
             Remove light
