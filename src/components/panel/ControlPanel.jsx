@@ -8,6 +8,7 @@ import { CameraPanel } from './CameraPanel.jsx';
 import { EnvironmentToggles } from './EnvironmentToggles.jsx';
 import { LightCard } from './LightCard.jsx';
 import { ModeTabs } from './ModeTabs.jsx';
+import { PosePanel } from './PosePanel.jsx';
 import { SetupFileControls } from './SetupFileControls.jsx';
 import { SubjectSelector } from './SubjectSelector.jsx';
 import { ToggleField } from './fields.jsx';
@@ -131,6 +132,7 @@ export function ControlPanel() {
           <h1>Studio Lighting</h1>
           <p>Drag to orbit · Scroll to zoom · Click a light to select it</p>
           <SubjectSelector />
+          <PosePanel />
           <FixtureVisibilityToggle />
           <LightRaysToggle />
           <CameraViewButtons />

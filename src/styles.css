@@ -666,3 +666,16 @@ body,
 .viewport-toolbar__status--error {
   color: var(--color-danger);
 }
+
+
+/* ---------- Pose Mode ---------- */
+.pose-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-raised);
+}

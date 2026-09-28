@@ -9,6 +9,7 @@ import { useLightingActions, useLightingState } from '../../state/LightingContex
 import { fitOverview, setupBounds } from '../../utils/viewFit.js';
 import { AutofocusTargetMarker, AutofocusTracker } from './AutofocusTargets.jsx';
 import { CameraPostFX } from './CameraPostFX.jsx';
+import { PoseController } from './PoseController.jsx';
 import { ScreenshotBridge } from './ScreenshotBridge.jsx';
 import { StudioEnvironment } from './StudioEnvironment.jsx';
 import { StudioLight } from './StudioLight.jsx';
@@ -52,12 +53,17 @@ function CameraViewController() {
           maxDistanceM: CAMERA_CONFIG.maxDistance,
         })
       : view;
-    // Drop leftover damping from a previous drag so the jump is exact.
-    controls._sphericalDelta?.set(0, 0, 0);
-    controls._panOffset?.set(0, 0, 0);
+    // Flush leftover damping from a previous drag, or it keeps nudging the
+    // camera after the jump (and on every later redraw). drei's OrbitControls
+    // (three-stdlib) keeps the damping deltas in closure variables; an update
+    // with damping off applies and zeroes them. The position is set after.
+    const damping = controls.enableDamping;
+    controls.enableDamping = false;
+    controls.update();
     camera.position.set(...framing.position);
     controls.target.set(...framing.target);
     controls.update();
+    controls.enableDamping = damping;
     invalidate();
   }, [cameraView, camera, controls, scene, invalidate]);
 
@@ -111,6 +117,8 @@ export function StudioCanvas() {
       {/* After SubjectModel: measures the AF targets once the subject is attached. */}
       <AutofocusTracker />
       <AutofocusTargetMarker />
+      {/* Pose Mode: rotate gizmo on the selected bone (poseStore.js). */}
+      <PoseController appMode={appMode} />
 
       {lights.map((light) => (
         <StudioLight

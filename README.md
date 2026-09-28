@@ -24,7 +24,8 @@ src/
 │  ├─ setupSerializer.js      # JSON export / import
 │  ├─ subjectStore.js         # Subject type + custom model lifecycle
 │  ├─ cameraStore.js          # appMode ('lighting' | 'camera') + photo-camera settings, AF targets
-│  ├─ viewStore.js            # Environment / guide toggles
+│  ├─ viewStore.js            # Environment toggles, background brightness, bokeh offset
+│  ├─ poseStore.js            # Pose Mode: bone list, selection, rest rotations
 │  ├─ screenshotService.js    # Canvas capture bridge (button ↔ renderer)
 │  └─ cameraSelectors.js      # Derived optics (AoV, DoF, blur) for panel + viewfinder
 ├─ postprocessing/
@@ -63,6 +64,7 @@ src/
    │  ├─ StudioEnvironment.jsx # Cyc, bokeh spheres, floor grid, angle guide
    │  ├─ AutofocusTargets.jsx # AF target measurement + red marker
    │  ├─ ScreenshotBridge.jsx # Capture without helper meshes
+   │  ├─ PoseController.jsx   # TransformControls (rotate) on the selected bone
    │  └─ fixtures/index.js    # shape key → 3D renderer registry
    ├─ viewport/               # Viewfinder overlay, Take Screenshot button
    └─ panel/                  # Control panel UI (ModeTabs, CameraPanel, …)
@@ -279,3 +281,20 @@ None of these cast shadows or emit light. With the background and spheres off, b
   4. An off-screen 2D canvas adds a HUD with the camera, lens, angle of view, aperture, focus, DoF and every light that is on (power, Ws, azimuth/elevation/distance, XYZ, color). The result is downloaded as a PNG.
 
   In camera mode the image is cropped to the 4:3 sensor frame.
+
+
+### Environment adjustments
+
+- **Background Brightness** (0.0–3.0, default 1.0) scales the cyc's linear reflectance: `new Color().setHex(0x767676).multiplyScalar(brightness)`. 0 is black (only the 4% dielectric sheen is left), 1 is 18% gray, 2 is +1 EV.
+- **Bokeh X / Y / Z** move the group of emissive spheres (one `THREE.Group`), so the highlights can be placed in the frame while looking through the viewfinder. **Reset bokeh position** returns them.
+
+### Pose Mode
+
+**Pose Mode** (lighting panel, under the subject selector) lists every `isBone` object of the loaded model and attaches a `TransformControls` gizmo in `rotate` mode to the selected bone.
+- While a ring is dragged, OrbitControls is disabled (`dragging-changed`).
+- **Shadows** refresh on every rotation step.
+- **Releasing a ring** updates the skinned bounds and re-measures the AF targets, so Eye AF follows a turned head.
+- **Turning Pose Mode off** detaches the gizmo. The pose is kept, and **Reset bone** / **Reset pose** restore the rest rotations.
+- **Camera mode:** the gizmo only exists in lighting mode, but the pose carries over.
+- **Screenshots** never include the gizmo.
+- **The mannequin** has no skeleton, so Pose Mode needs a rigged glTF/GLB (e.g. a Mixamo character).
