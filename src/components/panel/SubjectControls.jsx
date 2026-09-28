@@ -1,7 +1,10 @@
+import { Info, Upload } from 'lucide-react';
 import { useRef } from 'react';
 import { SUBJECT_CONFIG, SUBJECT_TYPES } from '../../config/sceneConfig.js';
 import { loadCustomModel, setSubjectType, useSubjectState } from '../../state/subjectStore.js';
 import { MODEL_FILE_ACCEPT } from '../../utils/modelLoader.js';
+import { IconButton } from '../ui/IconButton.jsx';
+import { Popover, usePopover } from '../ui/Popover.jsx';
 import { ReadoutList } from './fields.jsx';
 
 const SUBJECT_OPTIONS = [
@@ -128,12 +131,14 @@ function ModelReadout({ info }) {
 }
 
 /**
- * Subject selector (top of the panel): Default Mannequin or a local glTF/GLB.
- * Files are read in the browser only (URL.createObjectURL), never uploaded.
+ * Subject controls for the bottom panel's option row: Default Mannequin or a
+ * local glTF/GLB. Files are read in the browser only (URL.createObjectURL),
+ * never uploaded. Load status stays inline; the model readout opens in a popover.
  */
-export function SubjectSelector() {
+export function SubjectControls() {
   const { subjectType, model } = useSubjectState();
   const inputRef = useRef(null);
+  const details = usePopover();
   const isCustom = subjectType === SUBJECT_TYPES.CUSTOM;
 
   const handleFiles = (event) => {
@@ -143,11 +148,19 @@ export function SubjectSelector() {
     if (files.length) loadCustomModel(files);
   };
 
+  const status = model.loadingFileName
+    ? { text: `Loading ${model.loadingFileName}…`, role: 'status' }
+    : model.error
+      ? { text: `${model.error}${model.object ? ' The previous model is still shown.' : ''}`, role: 'alert', error: true }
+      : isCustom && !model.object
+        ? { text: 'No model yet — mannequin shown' }
+        : isCustom && model.info
+          ? { text: model.info.fileName }
+          : null;
   const releasedNote = describeReleased(model.lastReleased);
 
   return (
-    <section className="subject-selector" aria-label="Subject">
-      <span className="subject-selector__title">Subject (피사체)</span>
+    <section className="subject-selector subject-selector--compact" aria-label="Subject">
       <div className="segmented" role="radiogroup" aria-label="Subject type">
         {SUBJECT_OPTIONS.map((option) => (
           <label
@@ -165,50 +178,45 @@ export function SubjectSelector() {
           </label>
         ))}
       </div>
-
       {isCustom && (
-        <div className="subject-selector__custom">
-          <button type="button" className="button" onClick={() => inputRef.current?.click()}>
-            {model.object ? 'Replace model (.glb / .gltf)…' : 'Upload model (.glb / .gltf)…'}
-          </button>
-          <input
-            ref={inputRef}
-            className="visually-hidden"
-            type="file"
-            accept={MODEL_FILE_ACCEPT}
-            multiple
-            onChange={handleFiles}
-            aria-label="Upload custom 3D model"
-            data-testid="custom-model-input"
-          />
-          <span className="field__hint">
-            Loaded locally in your browser — nothing is uploaded. For a .gltf with separate files, select
-            the .gltf together with its .bin and all texture files (Ctrl/⌘ or Shift + click). Auto-fitted to{' '}
-            {SUBJECT_CONFIG.targetHeightM} m, feet on the floor.
-          </span>
-
-          {model.loadingFileName && (
-            <p className="status-message" role="status">
-              Loading {model.loadingFileName}…
-            </p>
-          )}
-          {model.error && (
-            <p className="status-message status-message--error" role="alert">
-              {model.error}
-              {model.object ? ' The previous model is still shown.' : ''}
-            </p>
-          )}
-          {!model.object && !model.loadingFileName && !model.error && (
-            <p className="status-message">No model loaded yet — the default mannequin is shown meanwhile.</p>
-          )}
-          {model.object && model.info && <ModelReadout info={model.info} />}
-        </div>
+        <IconButton
+          icon={Upload}
+          caption={model.object ? 'Replace' : 'Upload'}
+          label={model.object ? 'Replace model (.glb / .gltf)' : 'Upload model (.glb / .gltf)'}
+          tooltip={`Upload .glb / .gltf — loaded locally, nothing is uploaded. For a .gltf with separate files, select the .gltf together with its .bin and textures. Auto-fitted to ${SUBJECT_CONFIG.targetHeightM} m.`}
+          onClick={() => inputRef.current?.click()}
+        />
       )}
-      {releasedNote && (
-        <p className="status-message" data-testid="subject-released">
-          {releasedNote}
-        </p>
+      <input
+        ref={inputRef}
+        className="visually-hidden"
+        type="file"
+        accept={MODEL_FILE_ACCEPT}
+        multiple
+        onChange={handleFiles}
+        aria-label="Upload custom 3D model"
+        data-testid="custom-model-input"
+      />
+      {status && (
+        <span
+          className={`status-message status-message--inline ${status.error ? 'status-message--error' : ''}`}
+          role={status.role}
+          data-tooltip={status.text}
+        >
+          {status.text}
+        </span>
       )}
+      {(model.info || releasedNote) && (
+        <IconButton ref={details.anchorRef} icon={Info} label="Model details" active={details.open} onClick={details.toggle} />
+      )}
+      <Popover anchorRef={details.anchorRef} open={details.open} onClose={details.close} title="Subject · model details" width={620} testId="model-details">
+        {isCustom && model.object && model.info && <ModelReadout info={model.info} />}
+        {releasedNote && (
+          <p className="status-message" data-testid="subject-released">
+            {releasedNote}
+          </p>
+        )}
+      </Popover>
     </section>
   );
 }

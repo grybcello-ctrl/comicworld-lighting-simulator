@@ -1,6 +1,6 @@
 /**
  * Derived data for a LightInstance. Both the 3D scene (StudioLight) and the
- * control panel (LightCard) read through these selectors, so what the panel
+ * control panel (bottom panel rows, HUD) read through these selectors, so what the panel
  * shows is exactly what three.js renders — toggles can never drift apart.
  */
 import {
