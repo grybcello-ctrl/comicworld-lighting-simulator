@@ -66,8 +66,9 @@ src/
    │  ├─ ScreenshotBridge.jsx # Capture without helper meshes
    │  ├─ PoseController.jsx   # TransformControls (rotate) on the selected bone
    │  └─ fixtures/index.js    # shape key → 3D renderer registry
-   ├─ viewport/               # Viewfinder overlay, Take Screenshot button
-   └─ panel/                  # Control panel UI (ModeTabs, CameraPanel, …)
+   ├─ viewport/               # Viewfinder overlay, Setup HUD, Take Screenshot button
+   ├─ ui/                     # IconButton, TooltipLayer, Popover
+   └─ panel/                  # Bottom panel: BottomPanel, ModeTabs, lighting/ + camera/ rows
 ```
 
 ## Adding equipment
@@ -298,3 +299,18 @@ None of these cast shadows or emit light. With the background and spheres off, b
 - **Camera mode:** the gizmo only exists in lighting mode, but the pose carries over.
 - **Screenshots** never include the gizmo.
 - **The mannequin** has no skeleton, so Pose Mode needs a rigged glTF/GLB (e.g. a Mixamo character).
+
+## Layout: bottom panel and HUD
+
+The 3D view fills the window; the controls sit in a bottom panel (`components/panel/BottomPanel.jsx`). On the left is a mode rail (Lighting / Camera), followed by three rows of fixed height. Narrow windows scroll a row sideways (`overflow-x: auto`) instead of wrapping it.
+
+| Row | Lighting mode | Camera mode |
+|---|---|---|
+| 1 · Equipment | Light chips (select, on/off, add, details, remove) · strobes · compatible modifiers · grids / diffuser · gels · presets | Bodies · lenses · focus mode · optics details |
+| 2 · Sliders | Power, focusing rod, Kelvin, azimuth / elevation / distance, shift & tilt (expandable) · environment sliders | F-stop, focus distance, shooting distance, camera / aim height · environment sliders |
+| 3 · Options | Subject + upload · views (Full body, Face, Top, Front, Side, Quarter) · fixtures / light rays · environment toggles · Pose Mode · setup JSON | Fixtures in frame · environment toggles |
+
+- **Equipment buttons** are `lucide-react` icons with a short caption. Hovering or focusing one shows the full catalog name in a tooltip (`ui/TooltipLayer.jsx`, a single fixed layer, so the scrolling rows never clip it).
+- **Popovers:** readouts that do not fit a row (beam / shadow parameters, model details, camera optics) open in a popover above the panel.
+- **Setup HUD:** a transparent overlay at the top left of the 3D view (`viewport/SetupHud.jsx`). It lists the camera settings and, for every light, the live distance to the head, azimuth, elevation, fixture height and power. It is computed from the same selectors as the scene, so it follows every slider, and it is HTML only, so it never appears in screenshots.
+- **State:** the redesign only changes UI components. All state lives in the existing stores and contexts. Both modes' rows stay mounted and are only hidden, so switching modes keeps the panel state. At the same canvas size the 3D render is pixel-identical to the previous layout.

@@ -1,5 +1,9 @@
 /** Small, reusable form controls for the control panel. */
 
+/**
+ * Range slider with a label/value row. `compact` (bottom panel rows): fixed
+ * width, the hint moves into the hover tooltip so the row keeps one height.
+ */
 export function SliderField({
   label,
   value,
@@ -10,14 +14,20 @@ export function SliderField({
   formatValue = String,
   hint,
   disabled = false,
+  compact = false,
+  tooltip,
 }) {
+  const tip = tooltip ?? (compact && hint ? `${label} — ${hint}` : undefined);
   return (
-    <label className={`field ${disabled ? 'field--disabled' : ''}`}>
+    <label
+      className={`field ${compact ? 'field--compact' : ''} ${disabled ? 'field--disabled' : ''}`}
+      data-tooltip={tip}
+    >
       <span className="field__row">
         <span className="field__label">{label}</span>
         <span className="field__value">{formatValue(value)}</span>
       </span>
-      {hint && <span className="field__hint">{hint}</span>}
+      {hint && !compact && <span className="field__hint">{hint}</span>}
       <input
         type="range"
         min={min}
@@ -33,71 +43,23 @@ export function SliderField({
 }
 
 /**
- * Select with optional grouping.
- * @param {{ key: string, label: string, items: { id: string, name: string }[] }[]} groups
+ * Checkbox toggle. With `icon` it renders as a pill ("toggle chip") for the
+ * bottom panel's option row; the checkbox stays the accessible control.
  */
-export function GroupedSelectField({ label, value, groups, onChange, disabled = false }) {
+export function ToggleField({ label, checked, onChange, disabled = false, title, icon: Icon, className = '' }) {
   return (
-    <label className={`field ${disabled ? 'field--disabled' : ''}`}>
-      <span className="field__label">{label}</span>
-      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
-        {groups.map((group) => (
-          <optgroup key={group.key} label={group.label}>
-            {group.items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-export function ToggleField({ label, checked, onChange, disabled = false, title }) {
-  return (
-    <label className={`toggle ${disabled ? 'toggle--disabled' : ''}`} title={title}>
+    <label
+      className={`toggle ${Icon ? 'toggle-chip' : ''} ${checked ? 'toggle--checked' : ''} ${disabled ? 'toggle--disabled' : ''} ${className}`}
+      data-tooltip={title}
+    >
       <input
         type="checkbox"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
+      {Icon && <Icon size={15} aria-hidden="true" />}
       <span>{label}</span>
-    </label>
-  );
-}
-
-/**
- * Section heading with an on/off checkbox, e.g. "Color temperature [x]".
- * Children are rendered (disabled) even when off, so values stay visible.
- */
-export function ToggleSection({ label, checked, onChange, disabled = false, hint, children }) {
-  return (
-    <div className={`toggle-section ${checked ? 'toggle-section--on' : ''}`}>
-      <ToggleField label={label} checked={checked} onChange={onChange} disabled={disabled} />
-      {hint && <span className="field__hint">{hint}</span>}
-      {children}
-    </div>
-  );
-}
-
-/**
- * Flat select. `null` option values are represented as an empty string.
- * @param {{ value: string | null, label: string }[]} options
- */
-export function SelectField({ label, value, options, onChange }) {
-  return (
-    <label className="field">
-      <span className="field__label">{label}</span>
-      <select value={value ?? ''} onChange={(event) => onChange(event.target.value || null)}>
-        {options.map((option) => (
-          <option key={option.value ?? ''} value={option.value ?? ''}>
-            {option.label}
-          </option>
-        ))}
-      </select>
     </label>
   );
 }
