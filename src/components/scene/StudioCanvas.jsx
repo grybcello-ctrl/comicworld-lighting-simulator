@@ -6,7 +6,11 @@ import { APP_MODES } from '../../config/cameraConfig.js';
 import { CAMERA_CONFIG, CAMERA_VIEWS, RENDER_CONFIG } from '../../config/sceneConfig.js';
 import { useAppMode } from '../../state/cameraStore.js';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
+import { fitOverview, setupBounds } from '../../utils/viewFit.js';
+import { AutofocusTargetMarker, AutofocusTracker } from './AutofocusTargets.jsx';
 import { CameraPostFX } from './CameraPostFX.jsx';
+import { ScreenshotBridge } from './ScreenshotBridge.jsx';
+import { StudioEnvironment } from './StudioEnvironment.jsx';
 import { StudioLight } from './StudioLight.jsx';
 import { SubjectModel } from './SubjectModel.jsx';
 
@@ -24,22 +28,38 @@ function StudioFloor() {
   );
 }
 
-/** Applies the camera framing requested from the panel (Full body / Face close-up). */
+/**
+ * Applies the camera framing requested from the panel: fixed subject views
+ * (Full body / Face close-up) or overview views fitted to all fixtures
+ * (Top / Front / Side / Quarter).
+ */
 function CameraViewController() {
   const { cameraView } = useLightingState();
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls);
+  const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
 
   useLayoutEffect(() => {
     const view = CAMERA_VIEWS[cameraView.id];
     // The initial framing comes from the Canvas camera props.
     if (!view || !controls || cameraView.requestId === 0) return;
-    camera.position.set(...view.position);
-    controls.target.set(...view.target);
+    const framing = view.fit
+      ? fitOverview(setupBounds(scene), view.fit, {
+          fovDeg: camera.fov,
+          aspect: camera.aspect,
+          minDistanceM: CAMERA_CONFIG.minDistance,
+          maxDistanceM: CAMERA_CONFIG.maxDistance,
+        })
+      : view;
+    // Drop leftover damping from a previous drag so the jump is exact.
+    controls._sphericalDelta?.set(0, 0, 0);
+    controls._panOffset?.set(0, 0, 0);
+    camera.position.set(...framing.position);
+    controls.target.set(...framing.target);
     controls.update();
     invalidate();
-  }, [cameraView, camera, controls, invalidate]);
+  }, [cameraView, camera, controls, scene, invalidate]);
 
   return null;
 }
@@ -60,25 +80,37 @@ function CameraViewController() {
  *   helpers change: light rays and the selection highlight are hidden, fixture
  *   picking and OrbitControls are paused (kept mounted, so the orbit view is
  *   restored untouched). Lights, subject and shadow maps are shared as-is.
+ *
+ * The environment (cyc, bokeh spheres, grid, angle guide) and the AF target
+ * marker neither cast shadows nor emit light: shadow maps and the lighting on
+ * the subject are identical with every toggle on or off.
  */
 export function StudioCanvas() {
   const { lights, selectedLightId, showFixtures, showLightRays } = useLightingState();
   const { selectLight } = useLightingActions();
-  const isCameraMode = useAppMode() === APP_MODES.CAMERA;
+  const appMode = useAppMode();
+  const isCameraMode = appMode === APP_MODES.CAMERA;
 
   return (
     <Canvas
       frameloop="demand"
       shadows="percentage"
       dpr={[1, 2]}
+      // Screenshot export reads the canvas back (ScreenshotBridge.jsx).
+      gl={{ preserveDrawingBuffer: true }}
       camera={{ position: CAMERA_CONFIG.position, fov: CAMERA_CONFIG.fov, near: 0.02, far: 100 }}
     >
       <color attach="background" args={[RENDER_CONFIG.backgroundColor]} />
       <ambientLight intensity={RENDER_CONFIG.ambientIntensity} />
 
       <StudioFloor />
+      {/* 18% gray cyc, bokeh spheres, floor grid, angle guide (viewStore.js). */}
+      <StudioEnvironment appMode={appMode} />
       {/* Default mannequin or the uploaded glTF/GLB (subjectStore.js). */}
       <SubjectModel />
+      {/* After SubjectModel: measures the AF targets once the subject is attached. */}
+      <AutofocusTracker />
+      <AutofocusTargetMarker />
 
       {lights.map((light) => (
         <StudioLight
@@ -103,6 +135,7 @@ export function StudioCanvas() {
       />
       <CameraViewController />
       {isCameraMode && <CameraPostFX />}
+      <ScreenshotBridge />
     </Canvas>
   );
 }

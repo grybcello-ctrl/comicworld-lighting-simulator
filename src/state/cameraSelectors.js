@@ -24,8 +24,10 @@ export function selectCameraOptics(settings) {
   });
   const cocMm = cocLimitMm(sensor);
   const dof = depthOfField(optics, cocMm);
-  const faceDistanceM = settings.faceDistanceM;
+  const { faceDistanceM, eyeDistanceM } = settings;
   const faceBlurMm = blurDiameterMm(optics, faceDistanceM);
+  const eyeBlurMm = blurDiameterMm(optics, eyeDistanceM);
+  const inFocus = (distanceM) => distanceM >= dof.nearM && distanceM <= dof.farM;
   const magnification = optics.imageDistanceMm / optics.objectDistanceMm;
   return {
     body,
@@ -42,7 +44,10 @@ export function selectCameraOptics(settings) {
     focusRangeM: { min: minFocusDistanceM(lens), max: CAMERA_LIMITS.focusDistanceM.max },
     faceDistanceM,
     faceBlurMm,
-    faceInFocus: faceDistanceM >= dof.nearM && faceDistanceM <= dof.farM,
+    faceInFocus: inFocus(faceDistanceM),
+    eyeDistanceM,
+    eyeBlurMm,
+    eyeInFocus: inFocus(eyeDistanceM),
     magnification,
     // Frame size at the focus plane (m).
     fieldWidthM: sensor.widthMm / magnification / 1000,

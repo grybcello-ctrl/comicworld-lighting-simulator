@@ -5,48 +5,17 @@ import {
   DepthTexture,
   HalfFloatType,
   PerspectiveCamera,
-  Raycaster,
   UnsignedIntType,
-  Vector3,
   WebGLRenderTarget,
 } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { CAMERA_OPTICS_CONFIG, DOF_CONFIG, getBodyById, getLensById } from '../../config/cameraConfig.js';
-import { SUBJECT_TARGET, SUBJECT_TYPES } from '../../config/sceneConfig.js';
 import { PhysicalBokehPass } from '../../postprocessing/PhysicalBokehPass.js';
-import { cameraActions, useCameraState } from '../../state/cameraStore.js';
-import { useSubjectState } from '../../state/subjectStore.js';
+import { useCameraState } from '../../state/cameraStore.js';
 import { cameraPose, frameCanvasFit, lensState } from '../../utils/cameraOptics.js';
 import { compensatedBackground } from '../../utils/toneMappingInverse.js';
-
-/** Visible in the rendered image (the object and all its ancestors). */
-function isRendered(object) {
-  for (let o = object; o; o = o.parent) if (!o.visible) return false;
-  const materials = Array.isArray(object.material) ? object.material : [object.material];
-  return materials.some((material) => material && material.visible !== false);
-}
-
-/**
- * Face surface for AF: first visible subject hit of a ray from the front
- * (+z) through the head center. Measured once per subject; any camera pose
- * then gets its face distance by projection (cameraStore.js).
- */
-function useFacePointMeasurement(scene) {
-  const { subjectType, model } = useSubjectState();
-  // Same key as SubjectModel: the mannequin stays as placeholder until a model is ready.
-  const subjectKey = subjectType === SUBJECT_TYPES.CUSTOM && model.object ? `custom-${model.id}` : 'mannequin';
-  useLayoutEffect(() => {
-    const subject = scene.getObjectByName('subject');
-    if (!subject) return;
-    subject.updateMatrixWorld(true); // a model attached in this commit has not been rendered yet
-    const [x, y, z] = SUBJECT_TARGET;
-    const raycaster = new Raycaster(new Vector3(x, y, z + 20), new Vector3(0, 0, -1));
-    const hit = raycaster.intersectObject(subject, true).find((h) => isRendered(h.object));
-    cameraActions.reportFacePoint(hit ? hit.point.toArray() : null);
-  }, [scene, subjectKey]);
-}
 
 /**
  * Camera mode renderer: a separate "photo" camera (GFX body + GF lens) and a
@@ -76,8 +45,6 @@ export function CameraPostFX() {
   }, []);
   const backdrop = useMemo(() => new Color(), []);
   const pipelineRef = useRef(null);
-
-  useFacePointMeasurement(scene);
 
   // GPU resources live exactly as long as the camera mode.
   useLayoutEffect(() => {

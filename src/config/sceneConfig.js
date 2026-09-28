@@ -3,12 +3,22 @@
 /** World-space point every light aims at (center of the mannequin's head). */
 export const SUBJECT_TARGET = Object.freeze([0, 1.62, 0]);
 
-/** Camera framings selectable from the panel. */
+/**
+ * Orbit-camera framings selectable from the lighting panel.
+ *   group 'subject':  fixed position / target
+ *   group 'overview': `fit` = direction; the distance is computed so every
+ *                     fixture and the subject fit the view (utils/viewFit.js).
+ *                     Azimuth 0 = from the camera side (+Z), +90 = from +X.
+ */
 export const CAMERA_VIEWS = Object.freeze({
   // Full 1.75 m mannequin with some headroom for the fixtures.
-  fullBody: { label: 'Full body', position: [0, 1.15, 5.2], target: [0, 0.95, 0] },
+  fullBody: { label: 'Full body', group: 'subject', position: [0, 1.15, 5.2], target: [0, 0.95, 0] },
   // Close-up to inspect skin micro-texture and specular breakup.
-  face: { label: 'Face close-up', position: [0.2, 1.66, 0.62], target: [0, 1.62, 0] },
+  face: { label: 'Face close-up', group: 'subject', position: [0.2, 1.66, 0.62], target: [0, 1.62, 0] },
+  top: { label: 'Top', group: 'overview', fit: { azimuthDeg: 0, elevationDeg: 90 } },
+  front: { label: 'Front', group: 'overview', fit: { azimuthDeg: 0, elevationDeg: 0 } },
+  side: { label: 'Side', group: 'overview', fit: { azimuthDeg: 90, elevationDeg: 0 } },
+  quarter: { label: 'Quarter', group: 'overview', fit: { azimuthDeg: 45, elevationDeg: 35 } },
 });
 
 export const CAMERA_CONFIG = Object.freeze({
@@ -16,7 +26,8 @@ export const CAMERA_CONFIG = Object.freeze({
   fov: 35,
   orbitTarget: CAMERA_VIEWS.fullBody.target,
   minDistance: 0.25,
-  maxDistance: 15,
+  // Room for the overview framings of wide setups.
+  maxDistance: 30,
   // Allow slightly below the horizon, but never under the floor.
   maxPolarAngle: Math.PI / 2 + 0.15,
 });

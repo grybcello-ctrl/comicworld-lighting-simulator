@@ -3,6 +3,8 @@ import { CAMERA_BODIES, CAMERA_LIMITS, FOCUS_MODES, LENSES } from '../../config/
 import { formatFNumber, formatMeters, selectCameraOptics } from '../../state/cameraSelectors.js';
 import { cameraActions, useCameraState } from '../../state/cameraStore.js';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
+import { cameraPose } from '../../utils/cameraOptics.js';
+import { EnvironmentToggles } from './EnvironmentToggles.jsx';
 import { ReadoutList, SelectField, SliderField, ToggleField } from './fields.jsx';
 
 const FOCUS_SLIDER_STEPS = 1000;
@@ -84,22 +86,36 @@ function LensSection({ settings, derived }) {
   );
 }
 
+const FOCUS_OPTIONS = [
+  { mode: FOCUS_MODES.AF_EYE, label: 'AF · Eye' },
+  { mode: FOCUS_MODES.AF_FACE, label: 'AF · Face' },
+  { mode: FOCUS_MODES.MANUAL, label: 'MF' },
+];
+
+function focusStatus(distanceM, inFocus, focusDistanceM) {
+  const offsetM = distanceM - focusDistanceM;
+  if (inFocus) return `In focus ✓ (${offsetM >= 0 ? '+' : '−'}${Math.abs(offsetM * 1000).toFixed(0)} mm)`;
+  return `${offsetM > 0 ? 'Behind' : 'In front of'} the DoF (${Math.abs(offsetM * 100).toFixed(1)} cm from focus)`;
+}
+
+/** Straight-line distance camera.position → point (the axial one is what focuses). */
+function lineOfSightM(settings, point) {
+  if (!point) return null;
+  const { position } = cameraPose(settings);
+  return Math.hypot(...point.map((v, i) => v - position[i]));
+}
+
 function FocusSection({ settings, derived }) {
   const scale = useFocusSliderScale(derived.focusRangeM);
   const { dof } = derived;
-  const isAf = settings.focusMode === FOCUS_MODES.AF;
-  const faceOffsetM = derived.faceDistanceM - settings.focusDistanceM;
-  const faceStatus = derived.faceInFocus
-    ? 'In focus ✓'
-    : `${faceOffsetM > 0 ? 'Behind' : 'In front of'} the DoF (${Math.abs(faceOffsetM * 100).toFixed(0)} cm from focus)`;
+  const isAf = settings.focusMode !== FOCUS_MODES.MANUAL;
+  const eyeTarget = settings.eyeTarget;
+  const eyeLineM = lineOfSightM(settings, eyeTarget?.point);
   return (
     <section className="panel-section">
       <h2 className="panel-section__title">Focus</h2>
-      <div className="segmented" role="radiogroup" aria-label="Focus mode">
-        {[
-          { mode: FOCUS_MODES.AF, label: 'AF · Face' },
-          { mode: FOCUS_MODES.MANUAL, label: 'MF' },
-        ].map((option) => (
+      <div className="segmented segmented--three" role="radiogroup" aria-label="Focus mode">
+        {FOCUS_OPTIONS.map((option) => (
           <label
             key={option.mode}
             className={`segmented__option ${settings.focusMode === option.mode ? 'segmented__option--active' : ''}`}
@@ -135,17 +151,31 @@ function FocusSection({ settings, derived }) {
               : '∞',
           },
           { label: 'Hyperfocal distance', value: formatMeters(dof.hyperfocalM, 1) },
-          { label: 'Face distance', value: formatMeters(derived.faceDistanceM) },
-          { label: 'Face', value: faceStatus },
+          {
+            label: 'Eye distance (axial · line of sight)',
+            value: `${formatMeters(derived.eyeDistanceM, 3)}${eyeLineM ? ` · ${formatMeters(eyeLineM, 3)}` : ''}`,
+          },
+          { label: 'Eye', value: focusStatus(derived.eyeDistanceM, derived.eyeInFocus, settings.focusDistanceM) },
+          { label: 'Face distance', value: formatMeters(derived.faceDistanceM, 3) },
+          { label: 'Face', value: focusStatus(derived.faceDistanceM, derived.faceInFocus, settings.focusDistanceM) },
           {
             label: 'Background blur at ∞',
             value: `${derived.optics.blurAtInfinityMm.toFixed(2)} mm (${(derived.optics.blurAtInfinityFrameShare * 100).toFixed(1)}% of width)`,
           },
         ]}
       />
+      <div
+        className="af-target-info"
+        data-testid="eye-af-source"
+        data-eye-source={eyeTarget?.source ?? ''}
+        data-eye-point={JSON.stringify(eyeTarget?.point ?? null)}
+        data-face-point={JSON.stringify(settings.facePoint)}
+      >
+        <strong>Eye AF target:</strong> {eyeTarget ? `${eyeTarget.label} · ${eyeTarget.detail}` : 'not measured yet (face estimate)'}
+      </div>
       <span className="field__hint">
         Thin-lens model · DoF for a {derived.cocMm.toFixed(3)} mm circle of confusion (35 mm 0.030 mm scaled to the
-        sensor diagonal).
+        sensor diagonal). Focus distances run from camera.position along the optical axis: the focus is a plane.
       </span>
     </section>
   );
@@ -208,6 +238,7 @@ function ViewSection() {
         Light rays and selection highlights are never drawn in camera mode. Exposure is not tied to the f-number:
         the image keeps the brightness of the lighting setup.
       </span>
+      <EnvironmentToggles />
     </section>
   );
 }

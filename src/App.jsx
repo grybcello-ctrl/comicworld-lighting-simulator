@@ -1,5 +1,6 @@
 import { ControlPanel } from './components/panel/ControlPanel.jsx';
 import { StudioCanvas } from './components/scene/StudioCanvas.jsx';
+import { ScreenshotButton } from './components/viewport/ScreenshotButton.jsx';
 import { ViewfinderOverlay } from './components/viewport/ViewfinderOverlay.jsx';
 import { LightingProvider } from './state/LightingContext.jsx';
 
@@ -10,6 +11,7 @@ export default function App() {
         <main className="app-layout__viewport">
           <StudioCanvas />
           <ViewfinderOverlay />
+          <ScreenshotButton />
         </main>
         <aside className="app-layout__panel">
           <ControlPanel />

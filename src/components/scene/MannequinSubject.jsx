@@ -148,6 +148,12 @@ export function MannequinSubject() {
       {[-1, 1].map((side) => (
         <Ellipsoid key={side} position={[side * 0.078, 1.615, 0]} radii={[0.012, 0.028, 0.018]} />
       ))}
+      {/* Eye anchors for Eye AF, named like a rigged character's eye bones.
+          Eyeball centers (between brow and nose, 62 mm apart, 12 mm behind the
+          head surface). Bones render nothing. */}
+      {[-1, 1].map((side) => (
+        <bone key={`eye-${side}`} name={side > 0 ? 'LeftEye' : 'RightEye'} position={[side * 0.031, 1.628, 0.075]} />
+      ))}
 
       {/* Neck */}
       <Limb from={[0, 1.555, -0.005]} to={[0, 1.44, 0]} radiusFrom={0.045} radiusTo={0.052} />

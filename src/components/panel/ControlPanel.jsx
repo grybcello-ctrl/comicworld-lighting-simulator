@@ -5,6 +5,7 @@ import { useAppMode } from '../../state/cameraStore.js';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
 import { AddLightForm } from './AddLightForm.jsx';
 import { CameraPanel } from './CameraPanel.jsx';
+import { EnvironmentToggles } from './EnvironmentToggles.jsx';
 import { LightCard } from './LightCard.jsx';
 import { ModeTabs } from './ModeTabs.jsx';
 import { SetupFileControls } from './SetupFileControls.jsx';
@@ -72,22 +73,37 @@ function LightRaysToggle() {
   );
 }
 
-/** Camera framings; the face close-up is for inspecting skin texture. */
-function CameraViewButtons() {
+function ViewButtonRow({ group, ariaLabel }) {
   const { cameraView } = useLightingState();
   const { setCameraView } = useLightingActions();
   return (
-    <div className="button-row" role="group" aria-label="Camera view">
-      {Object.entries(CAMERA_VIEWS).map(([id, view]) => (
-        <button
-          key={id}
-          type="button"
-          className={`button button--small ${cameraView.id === id ? 'button--active' : ''}`}
-          onClick={() => setCameraView(id)}
-        >
-          {view.label}
-        </button>
-      ))}
+    <div className="button-row" role="group" aria-label={ariaLabel}>
+      {Object.entries(CAMERA_VIEWS)
+        .filter(([, view]) => view.group === group)
+        .map(([id, view]) => (
+          <button
+            key={id}
+            type="button"
+            className={`button button--small ${cameraView.id === id ? 'button--active' : ''}`}
+            onClick={() => setCameraView(id)}
+          >
+            {view.label}
+          </button>
+        ))}
+    </div>
+  );
+}
+
+/**
+ * Orbit-camera framings. Subject views: the face close-up is for inspecting
+ * skin texture. Overview views frame every fixture (a lighting map).
+ */
+function CameraViewButtons() {
+  return (
+    <div className="camera-views">
+      <ViewButtonRow group="subject" ariaLabel="Subject views" />
+      <span className="camera-views__title">Overview · 조명 배치 맵</span>
+      <ViewButtonRow group="overview" ariaLabel="Overview views" />
     </div>
   );
 }
@@ -118,6 +134,7 @@ export function ControlPanel() {
           <FixtureVisibilityToggle />
           <LightRaysToggle />
           <CameraViewButtons />
+          <EnvironmentToggles />
         </header>
 
         <PresetPicker />
