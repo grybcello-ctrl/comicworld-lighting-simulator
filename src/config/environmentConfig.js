@@ -14,6 +14,27 @@ export const ENVIRONMENT_DEFAULTS = Object.freeze({
 });
 
 /**
+ * Environment adjustments (state/viewStore.js), with slider limits.
+ * backgroundBrightness scales the cyc's linear reflectance (0.184 × value):
+ * 0 = black, 1 = 18% gray, 2 = +1 EV, 3 = 55% reflectance.
+ * bokehOffset moves the whole group of bokeh spheres (m, world axes).
+ */
+export const ENVIRONMENT_ADJUST_DEFAULTS = Object.freeze({
+  backgroundBrightness: 1,
+  bokehOffsetX: 0,
+  bokehOffsetY: 0,
+  bokehOffsetZ: 0,
+});
+
+export const ENVIRONMENT_ADJUST_LIMITS = Object.freeze({
+  backgroundBrightness: { min: 0, max: 3, step: 0.05 },
+  bokehOffsetX: { min: -2, max: 2, step: 0.01 },
+  bokehOffsetY: { min: -1, max: 1.5, step: 0.01 },
+  // + = towards the camera. The spheres sit 0.2–1.3 m in front of the wall.
+  bokehOffsetZ: { min: -0.2, max: 3, step: 0.01 },
+});
+
+/**
  * 18% gray cyclorama behind the subject (who faces +Z at the origin):
  * a floor apron, a cove (quarter circle) and a vertical wall.
  */
@@ -119,4 +140,12 @@ export const SCREENSHOT_CONFIG = Object.freeze({
   hudBackground: 'rgba(12, 12, 16, 0.68)',
   // The download link's Blob URL is revoked after this delay (as FileSaver.js does).
   revokeDelayMs: 40000,
+});
+
+
+/** Pose Mode gizmo (components/scene/PoseController.jsx). */
+export const POSE_CONFIG = Object.freeze({
+  // 'local': rings follow the bone's own axes (bend / twist like a joint).
+  space: 'local',
+  gizmoSize: 0.8,
 });

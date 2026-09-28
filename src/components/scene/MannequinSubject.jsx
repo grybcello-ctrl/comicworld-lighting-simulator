@@ -152,7 +152,13 @@ export function MannequinSubject() {
           Eyeball centers (between brow and nose, 62 mm apart, 12 mm behind the
           head surface). Bones render nothing. */}
       {[-1, 1].map((side) => (
-        <bone key={`eye-${side}`} name={side > 0 ? 'LeftEye' : 'RightEye'} position={[side * 0.031, 1.628, 0.075]} />
+        <bone
+          key={`eye-${side}`}
+          name={side > 0 ? 'LeftEye' : 'RightEye'}
+          position={[side * 0.031, 1.628, 0.075]}
+          // AF anchors only: they move nothing, so Pose Mode does not list them.
+          userData={{ poseIgnore: true }}
+        />
       ))}
 
       {/* Neck */}

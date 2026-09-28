@@ -80,13 +80,16 @@ function createCycloramaGeometry(config) {
 }
 
 /** 18% gray sweep: receives shadows, never casts them (lights behind it still reach the subject). */
-function Cyclorama() {
+function Cyclorama({ brightness }) {
   const geometry = useMemo(() => createCycloramaGeometry(CYCLORAMA_CONFIG), []);
   useDisposeOnUnmount(geometry);
+  // setHex converts sRGB #767676 to linear 0.184; scaling the linear value
+  // scales the reflectance (2× = +1 EV). 0 = black.
+  const color = useMemo(() => new Color().setHex(parseInt(CYCLORAMA_CONFIG.color.slice(1), 16)).multiplyScalar(brightness), [brightness]);
   return (
     <mesh name="cyclorama" geometry={geometry} receiveShadow castShadow={false}>
       <meshStandardMaterial
-        color={CYCLORAMA_CONFIG.color}
+        color={color}
         roughness={CYCLORAMA_CONFIG.roughness}
         metalness={CYCLORAMA_CONFIG.metalness}
         // Wins the depth test against the studio floor it lies on.
@@ -99,7 +102,7 @@ function Cyclorama() {
 }
 
 /** Emissive point highlights behind the subject (bokeh test targets). They light nothing. */
-function BokehSpheres() {
+function BokehSpheres({ offset }) {
   const spheres = useMemo(
     () =>
       BOKEH_SPHERES_CONFIG.spheres.map(([x, y, z, radius, hex], i) => ({
@@ -112,7 +115,8 @@ function BokehSpheres() {
     [],
   );
   return (
-    <group name="bokeh-spheres">
+    // One THREE.Group: the offset sliders move all spheres together.
+    <group name="bokeh-spheres" position={offset}>
       {spheres.map((sphere) => (
         <mesh key={sphere.key} position={sphere.position} castShadow={false} receiveShadow={false}>
           <sphereGeometry args={[sphere.radius, 20, 14]} />
@@ -264,15 +268,24 @@ function AngleGuide({ showCamera }) {
  * shadow maps and the lighting on the subject are unaffected.
  */
 export function StudioEnvironment({ appMode }) {
-  const { showBackground, showBokehSpheres, showFloorGrid, showAngleGuide } = useViewState();
+  const {
+    showBackground,
+    showBokehSpheres,
+    showFloorGrid,
+    showAngleGuide,
+    backgroundBrightness,
+    bokehOffsetX,
+    bokehOffsetY,
+    bokehOffsetZ,
+  } = useViewState();
   const invalidate = useThree((state) => state.invalidate);
   useLayoutEffect(() => {
     invalidate(); // frameloop="demand": draw the toggled scene
   }, [showBackground, showBokehSpheres, showFloorGrid, showAngleGuide, invalidate]);
   return (
     <group name="studio-environment">
-      {showBackground && <Cyclorama />}
-      {showBokehSpheres && <BokehSpheres />}
+      {showBackground && <Cyclorama brightness={backgroundBrightness} />}
+      {showBokehSpheres && <BokehSpheres offset={[bokehOffsetX, bokehOffsetY, bokehOffsetZ]} />}
       {showFloorGrid && <FloorGrid />}
       {showAngleGuide && <AngleGuide showCamera={appMode === APP_MODES.LIGHTING} />}
     </group>
