@@ -201,7 +201,8 @@ export function BeamRaysHelper({ lightRef, visible, color, startDistance = 0, em
   });
 
   return (
-    <group visible={visible} name="beam-rays-helper">
+    // Visual helper: hidden while a screenshot is taken (ScreenshotBridge.jsx).
+    <group visible={visible} name="beam-rays-helper" userData={{ hideInScreenshot: true }}>
       <primitive object={fill} />
       <primitive object={outline} />
       <primitive object={core} />

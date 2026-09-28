@@ -6,6 +6,11 @@
  * lighting reducer, the subject store or the scene graph, so lights, the
  * loaded model, shadow maps and the parabolic calculations are never reset
  * or recomputed. Setup JSON files stay lighting-only.
+ *
+ * Focus distances follow the depth-of-field pass: they are measured from
+ * camera.position (the focal plane) ALONG the optical axis. The depth buffer
+ * and a real lens both focus on a plane, so an off-center target at
+ * straight-line distance d sits at the axial distance d·cos(angle off axis).
  */
 import { useSyncExternalStore } from 'react';
 import { SUBJECT_TARGET } from '../config/sceneConfig.js';
@@ -22,37 +27,71 @@ import { axialDistanceM, cameraPose, clampFocusDistanceM, snapFNumber } from '..
 
 const clamp = (value, { min, max }) => Math.min(Math.max(value, min), max);
 
-/** Face surface estimate used until the scene measures the subject (AF ray). */
+/** Face surface estimate used until the scene measures the subject (AF rays). */
 const ESTIMATED_FACE_POINT = Object.freeze([
   SUBJECT_TARGET[0],
   SUBJECT_TARGET[1],
   SUBJECT_TARGET[2] + CAMERA_OPTICS_CONFIG.faceSurfaceOffsetM,
 ]);
 
-/** Derived values: face distance for the current pose, and the AF/MF focus distance. */
+const isPoint = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite);
+const samePoint = (a, b) => (a === null && b === null) || (a && b && a.every((v, i) => Math.abs(v - b[i]) < 1e-6));
+
+/** Point on the optical axis at `distanceM` from the camera (the MF focus point). */
+function axisPoint(pose, distanceM) {
+  const [px, py, pz] = pose.position;
+  const direction = pose.target.map((t, i) => t - pose.position[i]);
+  const length = Math.hypot(...direction) || 1;
+  return [px, py, pz].map((p, i) => p + (direction[i] / length) * distanceM);
+}
+
+/** Derived values: target distances for the current pose, the focus distance and its world point. */
 function withDerived(next) {
   const lens = getLensById(next.lensId);
-  const faceDistanceM = axialDistanceM(cameraPose(next), next.facePoint ?? ESTIMATED_FACE_POINT);
+  const pose = cameraPose(next);
+  const facePoint = next.facePoint ?? ESTIMATED_FACE_POINT;
+  const eyePoint = next.eyeTarget?.point ?? facePoint;
+  const faceDistanceM = axialDistanceM(pose, facePoint);
+  const eyeDistanceM = axialDistanceM(pose, eyePoint);
   // AF drives the focus distance; MF keeps the slider value (clamped to the lens).
-  const wanted = next.focusMode === FOCUS_MODES.AF ? faceDistanceM : next.focusDistanceM;
+  const wanted =
+    next.focusMode === FOCUS_MODES.AF_EYE
+      ? eyeDistanceM
+      : next.focusMode === FOCUS_MODES.AF_FACE
+        ? faceDistanceM
+        : next.focusDistanceM;
+  const focusDistanceM = clampFocusDistanceM(lens, wanted, CAMERA_LIMITS.focusDistanceM.max);
+  const afTargetPoint =
+    next.focusMode === FOCUS_MODES.AF_EYE
+      ? eyePoint
+      : next.focusMode === FOCUS_MODES.AF_FACE
+        ? facePoint
+        : axisPoint(pose, focusDistanceM);
   return {
     ...next,
     faceDistanceM,
-    focusDistanceM: clampFocusDistanceM(lens, wanted, CAMERA_LIMITS.focusDistanceM.max),
+    eyeDistanceM,
+    focusDistanceM,
+    // Keep the array identity while the point is unchanged (fewer re-renders).
+    afTargetPoint: samePoint(afTargetPoint, next.afTargetPoint) ? next.afTargetPoint : afTargetPoint,
   };
 }
 
 let state = withDerived({
   appMode: APP_MODES.LIGHTING,
   ...CAMERA_DEFAULTS,
-  focusMode: FOCUS_MODES.AF,
+  focusMode: FOCUS_MODES.AF_EYE,
   focusDistanceM: CAMERA_DEFAULTS.shootingDistanceM,
-  // World point of the face surface, measured once per subject by a ray from
-  // the front (CameraPostFX). The camera always sits on the +z axis, so the
-  // face distance for any pose is an axial projection, no raycast per drag.
+  // Measured once per subject (AutofocusTargets.jsx). The camera always sits on
+  // the +z axis, so any pose gets its distances by axial projection — no
+  // raycast per slider move.
   facePoint: null,
-  // Derived: axial distance (m, from the focal plane) of the face.
+  // { point, source, label, detail } from utils/eyeAutofocus.js, or null.
+  eyeTarget: null,
+  // Derived (withDerived).
   faceDistanceM: 0,
+  eyeDistanceM: 0,
+  afTargetPoint: null,
 });
 const listeners = new Set();
 
@@ -75,6 +114,10 @@ export const useCameraState = () => useSyncExternalStore(subscribe, getCameraSta
 /** Only the mode: components that don't care about camera settings don't re-render. */
 const getAppMode = () => state.appMode;
 export const useAppMode = () => useSyncExternalStore(subscribe, getAppMode);
+
+/** Only the AF target point (the marker re-renders when it moves, nothing else). */
+const getAfTargetPoint = () => state.afTargetPoint;
+export const useAfTargetPoint = () => useSyncExternalStore(subscribe, getAfTargetPoint);
 
 export const cameraActions = {
   setAppMode(appMode) {
@@ -107,11 +150,17 @@ export const cameraActions = {
   setAimHeight(value) {
     setState({ aimHeightM: clamp(value, CAMERA_LIMITS.aimHeightM) });
   },
-  /** Written by the scene (AF ray against the subject); null = use the estimate. */
-  reportFacePoint(point) {
-    const valid = Array.isArray(point) && point.length === 3 && point.every(Number.isFinite);
-    const facePoint = valid ? point : null;
-    const same = facePoint && state.facePoint && facePoint.every((v, i) => Math.abs(v - state.facePoint[i]) < 1e-6);
-    if (!same) setState({ facePoint });
+  /**
+   * Written by the scene once per subject. `facePoint`: world point or null
+   * (estimate). `eyeTarget`: result of findEyeTarget or null (face point used).
+   */
+  reportAfTargets({ facePoint, eyeTarget }) {
+    const face = isPoint(facePoint) ? facePoint : null;
+    const eye = eyeTarget && isPoint(eyeTarget.point) ? eyeTarget : null;
+    const sameEye =
+      (eye === null && state.eyeTarget === null) ||
+      (eye && state.eyeTarget && samePoint(eye.point, state.eyeTarget.point) && eye.label === state.eyeTarget.label);
+    if (samePoint(face, state.facePoint) && sameEye) return;
+    setState({ facePoint: face, eyeTarget: eye });
   },
 };

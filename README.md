@@ -15,19 +15,26 @@ src/
 │  ├─ equipmentConfig.js    # Equipment catalog: STROBES, MODIFIERS, GRIDS, GELS, mounts
 │  ├─ equipmentRegistry.js  # Query helpers (lookup, mount compatibility, grouping)
 │  ├─ lightingPresets.js    # Preset lighting setups (built from catalog ids)
-│  ├─ cameraConfig.js       # Camera mode: GFX bodies, GF lenses, f-stops, DoF settings
+│  ├─ cameraConfig.js       # Camera mode: GFX bodies, GF lenses, f-stops, DoF, Eye AF
+│  ├─ environmentConfig.js  # Cyc, bokeh spheres, grid, angle guide, overview fit, screenshot HUD
 │  └─ sceneConfig.js        # Camera, render calibration, slider limits
 ├─ state/
 │  ├─ LightingContext.jsx     # Light instances (useReducer + context)
 │  ├─ lightSelectors.js       # Shared derived data (pose, rig, color) for scene + panel
 │  ├─ setupSerializer.js      # JSON export / import
 │  ├─ subjectStore.js         # Subject type + custom model lifecycle
-│  ├─ cameraStore.js          # appMode ('lighting' | 'camera') + photo-camera settings
+│  ├─ cameraStore.js          # appMode ('lighting' | 'camera') + photo-camera settings, AF targets
+│  ├─ viewStore.js            # Environment / guide toggles
+│  ├─ screenshotService.js    # Canvas capture bridge (button ↔ renderer)
 │  └─ cameraSelectors.js      # Derived optics (AoV, DoF, blur) for panel + viewfinder
 ├─ postprocessing/
 │  └─ PhysicalBokehPass.js    # Thin-lens depth of field (CoC from f, N, focus distance)
 ├─ utils/
 │  ├─ cameraOptics.js         # Thin-lens math: FOV fit, focus geometry, CoC, DoF
+│  ├─ eyeAutofocus.js         # Eye AF: eye/head bones, bbox heuristic, skin-depth correction
+│  ├─ viewFit.js              # Overview framings that fit every fixture
+│  ├─ setupHud.js             # Screenshot HUD text
+│  ├─ screenshotExport.js     # Off-screen 2D composite + PNG download
 │  ├─ toneMappingInverse.js   # Keeps the backdrop color identical in camera mode
 │  ├─ lightMath.js            # Placement, Connect-style power scale (f-stop law)
 │  ├─ beamModel.js            # Strobe + modifier + grid → three.js light rig
@@ -53,8 +60,11 @@ src/
 └─ components/
    ├─ scene/                  # Canvas, mannequin, StudioLight, fixture renderers
    │  ├─ CameraPostFX.jsx     # Camera mode renderer: photo camera + EffectComposer
+   │  ├─ StudioEnvironment.jsx # Cyc, bokeh spheres, floor grid, angle guide
+   │  ├─ AutofocusTargets.jsx # AF target measurement + red marker
+   │  ├─ ScreenshotBridge.jsx # Capture without helper meshes
    │  └─ fixtures/index.js    # shape key → 3D renderer registry
-   ├─ viewport/               # Viewfinder overlay (frame lines, info strip)
+   ├─ viewport/               # Viewfinder overlay, Take Screenshot button
    └─ panel/                  # Control panel UI (ModeTabs, CameraPanel, …)
 ```
 
@@ -225,3 +235,47 @@ The tabs at the top of the panel switch `appMode` (`state/cameraStore.js`) betwe
   - OrbitControls stays mounted but is paused, so the lighting view comes back pixel-identical.
   - Post-processing resources exist only while camera mode is active.
 - **Exposure** does not follow the f-number: camera mode keeps the brightness of the lighting setup.
+
+
+### Eye AF
+
+The focus modes are **AF · Eye** (the default), **AF · Face** and **MF**. Eye AF picks its target once per subject (`utils/eyeAutofocus.js`), then corrects the depth so the target is on the skin rather than inside the head.
+
+1. **Eye bones** (names containing `Eye`, `LeftEye`, `RightEye`; brows, lids, look-at and end bones are skipped). An eye bone sits at the eyeball center, so the target is the first surface in front of it (cornea, or the face shell on models without eyeballs). Of the two eyes, the one nearer the camera is used.
+   - The mannequin has two invisible `LeftEye`/`RightEye` anchors, so it goes through the same path.
+2. **Head bone.** The head joint sits at the skull base. The eye height is set 36 % of the way from the joint to the head top (`HeadTop_End`, or the crown). The depth is the face surface at that height, found with rays half an interpupillary distance (31.5 mm) left and right of the center line, so they land on an eye and not the nose.
+3. **No usable bones: bounding box.** The eye height is 92 % of the model height. The head's center line comes from the frontal cap of the vertices at that height. The depth is the face surface on an eye, as above. If no surface is hit, the target falls back to the front of that height slice.
+
+Measured against the Mixamo X Bot's eye bones, the head-bone and bounding-box targets land within 0.9 mm in depth. On the mannequin, simpler rules miss the ±1.0 cm depth of field of 110 mm f/2 at 1.5 m:
+
+| Rule | Where it lands | Error vs. the eye |
+|---|---|---|
+| Front face of the whole model's `Box3` | Toes | 10.8 cm in front |
+| Front of the slice at 85–90 % height | Chin | 2.0 cm behind, 8 cm low |
+| Front-most point at eye height | Nose tip | 3.3 cm in front |
+
+The focus distance runs from `camera.position` along the optical axis, which is the view-space depth the depth-of-field pass reads. A straight-line distance would be 2.6 cm too long at the default framing.
+
+**Show AF target** draws a small red sphere at the focus point: the AF target, or in MF the point on the optical axis at the focus distance.
+
+### Studio environment
+
+The toggles appear in both panels:
+- **18% gray cyclorama** (`#767676`, linear 0.184). It receives shadows and casts none.
+- **Emissive bokeh spheres.** They light nothing.
+- **Floor grid** (0.5 m).
+- **Angle guide:** a floor protractor in light-azimuth degrees plus the photo camera's horizontal angle of view.
+- **Show AF target.**
+
+None of these cast shadows or emit light. With the background and spheres off, both modes are pixel-identical to the previous release.
+
+### Overview views and screenshots
+
+- **[Top] [Front] [Side] [Quarter]** (lighting panel) move the orbit camera so that every fixture and the subject fit the view (`utils/viewFit.js`).
+- **Take Screenshot** (top right of the 3D view) produces a PNG:
+  1. It renders one frame without the AF target, angle guide and light rays.
+  2. It reads the canvas (`preserveDrawingBuffer: true`) with `toDataURL`.
+  3. It restores the helpers and renders again, all in the same task, so the screen never shows the frame without helpers.
+  4. An off-screen 2D canvas adds a HUD with the camera, lens, angle of view, aperture, focus, DoF and every light that is on (power, Ws, azimuth/elevation/distance, XYZ, color). The result is downloaded as a PNG.
+
+  In camera mode the image is cropped to the 4:3 sensor frame.

@@ -68,8 +68,47 @@ export const CAMERA_DEFAULTS = Object.freeze({
   aimHeightM: 1.2,
 });
 
-/** Focus modes: 'af' keeps the face in focus, 'manual' uses the focus slider. */
-export const FOCUS_MODES = Object.freeze({ AF: 'af', MANUAL: 'manual' });
+/**
+ * Focus modes: the AF modes keep their target in focus while the camera
+ * moves; 'manual' uses the focus slider.
+ */
+export const FOCUS_MODES = Object.freeze({ AF_EYE: 'af-eye', AF_FACE: 'af-face', MANUAL: 'manual' });
+
+/**
+ * Eye AF target search (src/utils/eyeAutofocus.js). Subjects face +Z (glTF
+ * convention, also the mannequin); the camera stands on the +Z side.
+ */
+export const EYE_AF_CONFIG = Object.freeze({
+  // Bone names (case-insensitive). Eye bones first, then the head bone.
+  eyeBonePattern: /eye/i,
+  // Eyelids, brows, lashes, look-at targets and end/control bones are not the eye.
+  eyeBoneExclude: /brow|lid|lash|socket|target|look|aim|ctrl|control|common|master|end\b|_end|nub|tip|^eyes$/i,
+  headBonePattern: /head/i,
+  headBoneExclude: /top|end\b|_end|nub|tip|forehead|ctrl|control|target|aim|look/i,
+  // Head-top marker (e.g. Mixamo 'HeadTop_End'); any node type.
+  headTopPattern: /head.?top|head.?end|head.?nub/i,
+  // Eye bones sit at the eyeball center; the focus goes to the first surface
+  // (cornea, or the face shell of models without eyeballs) in front of it, if
+  // one lies within this distance. Measured: Mixamo X Bot 3.5 cm.
+  eyeSurfaceMaxOffsetM: 0.06,
+  // Head bone only: eye height = head joint + fraction × (head top − head joint).
+  // Measured on Mixamo X Bot (eye bones as ground truth): 0.36.
+  headJointToEyeFraction: 0.36,
+  // Head bone / bbox: the face surface is searched up to this far in front of the reference.
+  faceSearchDepthM: 0.25,
+  // Bbox heuristic: eye height as a fraction of the subject's height (from the
+  // feet, hair included). Measured: mannequin 94.4 %, Mixamo X Bot 92.0 % (eye
+  // bones); Soldier 90.7 % (helmet) and Michelle 87.1 % (big hair) are
+  // head-bone estimates checked on renders. Hair or hats push the value down.
+  bboxEyeHeightFraction: 0.92,
+  // Vertical half-width of the eye-height slice used to find the head's center.
+  bboxSliceHalfHeightFraction: 0.015,
+  // Frontal cap of that slice (the face) used for the center line.
+  faceCapDepthM: 0.015,
+  // Rays are cast half an interpupillary distance (63 mm adult mean) left and
+  // right of the head's center line: on the eyes, not on the nose.
+  halfInterpupillaryM: 0.0315,
+});
 
 export const CAMERA_OPTICS_CONFIG = Object.freeze({
   // Permissible circle of confusion for the DoF readout: the 35 mm standard

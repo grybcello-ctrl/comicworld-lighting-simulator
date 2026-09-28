@@ -3,6 +3,12 @@ import { APP_MODES, FOCUS_MODES, VIEWFINDER_CONFIG } from '../../config/cameraCo
 import { formatFNumber, formatMeters, selectCameraOptics } from '../../state/cameraSelectors.js';
 import { useCameraState } from '../../state/cameraStore.js';
 
+const FOCUS_LABELS = {
+  [FOCUS_MODES.AF_EYE]: 'AF-Eye',
+  [FOCUS_MODES.AF_FACE]: 'AF-Face',
+  [FOCUS_MODES.MANUAL]: 'MF',
+};
+
 /**
  * Camera-mode frame lines over the canvas. The render covers the whole canvas;
  * the sensor's 4:3 frame is the largest centered rectangle that fits (same fit
@@ -29,10 +35,13 @@ export function ViewfinderOverlay() {
           <span>{lens.name}</span>
           <strong>{formatFNumber(settings.fNumber)}</strong>
           <span>
-            {settings.focusMode === FOCUS_MODES.AF ? 'AF' : 'MF'} {formatMeters(settings.focusDistanceM)}
+            {FOCUS_LABELS[settings.focusMode]} {formatMeters(settings.focusDistanceM)}
           </span>
           <span>
             DoF {formatMeters(dof.nearM)}–{formatMeters(dof.farM)}
+          </span>
+          <span className={derived.eyeInFocus ? 'viewfinder__ok' : 'viewfinder__warn'}>
+            Eye {derived.eyeInFocus ? 'in focus' : 'out of focus'}
           </span>
           <span className={derived.faceInFocus ? 'viewfinder__ok' : 'viewfinder__warn'}>
             Face {derived.faceInFocus ? 'in focus' : 'out of focus'}
