@@ -1,10 +1,8 @@
-import { Info, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { useRef } from 'react';
 import { SUBJECT_CONFIG, SUBJECT_TYPES } from '../../config/sceneConfig.js';
 import { loadCustomModel, setSubjectType, useSubjectState } from '../../state/subjectStore.js';
 import { MODEL_FILE_ACCEPT } from '../../utils/modelLoader.js';
-import { IconButton } from '../ui/IconButton.jsx';
-import { Popover, usePopover } from '../ui/Popover.jsx';
 import { ReadoutList } from './fields.jsx';
 
 const SUBJECT_OPTIONS = [
@@ -131,14 +129,13 @@ function ModelReadout({ info }) {
 }
 
 /**
- * Subject controls for the bottom panel's option row: Default Mannequin or a
- * local glTF/GLB. Files are read in the browser only (URL.createObjectURL),
- * never uploaded. Load status stays inline; the model readout opens in a popover.
+ * Subject controls (right panel): Default Mannequin or a local glTF/GLB.
+ * Files are read in the browser only (URL.createObjectURL), never uploaded.
+ * The model readout lives in the info panel (SubjectInfo).
  */
 export function SubjectControls() {
   const { subjectType, model } = useSubjectState();
   const inputRef = useRef(null);
-  const details = usePopover();
   const isCustom = subjectType === SUBJECT_TYPES.CUSTOM;
 
   const handleFiles = (event) => {
@@ -148,19 +145,8 @@ export function SubjectControls() {
     if (files.length) loadCustomModel(files);
   };
 
-  const status = model.loadingFileName
-    ? { text: `Loading ${model.loadingFileName}…`, role: 'status' }
-    : model.error
-      ? { text: `${model.error}${model.object ? ' The previous model is still shown.' : ''}`, role: 'alert', error: true }
-      : isCustom && !model.object
-        ? { text: 'No model yet — mannequin shown' }
-        : isCustom && model.info
-          ? { text: model.info.fileName }
-          : null;
-  const releasedNote = describeReleased(model.lastReleased);
-
   return (
-    <section className="subject-selector subject-selector--compact" aria-label="Subject">
+    <section className="subject-selector" aria-label="Subject">
       <div className="segmented" role="radiogroup" aria-label="Subject type">
         {SUBJECT_OPTIONS.map((option) => (
           <label
@@ -179,13 +165,14 @@ export function SubjectControls() {
         ))}
       </div>
       {isCustom && (
-        <IconButton
-          icon={Upload}
-          caption={model.object ? 'Replace' : 'Upload'}
-          label={model.object ? 'Replace model (.glb / .gltf)' : 'Upload model (.glb / .gltf)'}
-          tooltip={`Upload .glb / .gltf — loaded locally, nothing is uploaded. For a .gltf with separate files, select the .gltf together with its .bin and textures. Auto-fitted to ${SUBJECT_CONFIG.targetHeightM} m.`}
+        <button
+          type="button"
+          className="text-button"
+          data-tooltip={`Loaded locally — nothing is uploaded. For a .gltf with separate files, select the .gltf together with its .bin and textures. Auto-fitted to ${SUBJECT_CONFIG.targetHeightM} m.`}
           onClick={() => inputRef.current?.click()}
-        />
+        >
+          <Upload size={13} aria-hidden="true" /> {model.object ? 'Replace model (.glb / .gltf)…' : 'Upload model (.glb / .gltf)…'}
+        </button>
       )}
       <input
         ref={inputRef}
@@ -197,26 +184,41 @@ export function SubjectControls() {
         aria-label="Upload custom 3D model"
         data-testid="custom-model-input"
       />
-      {status && (
-        <span
-          className={`status-message status-message--inline ${status.error ? 'status-message--error' : ''}`}
-          role={status.role}
-          data-tooltip={status.text}
-        >
-          {status.text}
-        </span>
+      {model.loadingFileName && (
+        <p className="panel-note" role="status">
+          Loading {model.loadingFileName}…
+        </p>
       )}
-      {(model.info || releasedNote) && (
-        <IconButton ref={details.anchorRef} icon={Info} label="Model details" active={details.open} onClick={details.toggle} />
+      {model.error && (
+        <p className="panel-note panel-note--error" role="alert">
+          {model.error}
+          {model.object ? ' The previous model is still shown.' : ''}
+        </p>
       )}
-      <Popover anchorRef={details.anchorRef} open={details.open} onClose={details.close} title="Subject · model details" width={620} testId="model-details">
-        {isCustom && model.object && model.info && <ModelReadout info={model.info} />}
-        {releasedNote && (
-          <p className="status-message" data-testid="subject-released">
-            {releasedNote}
-          </p>
-        )}
-      </Popover>
+      {isCustom && !model.object && !model.loadingFileName && !model.error && (
+        <p className="panel-note">No model loaded yet — the mannequin is shown meanwhile.</p>
+      )}
     </section>
+  );
+}
+
+/** Subject readout for the info panel. */
+export function SubjectInfo() {
+  const { subjectType, model } = useSubjectState();
+  const releasedNote = describeReleased(model.lastReleased);
+  const isCustom = subjectType === SUBJECT_TYPES.CUSTOM && model.object && model.info;
+  return (
+    <>
+      {isCustom ? (
+        <ModelReadout info={model.info} />
+      ) : (
+        <p className="panel-note">Default mannequin · {SUBJECT_CONFIG.mannequinHeightM} m, facing the camera (+Z).</p>
+      )}
+      {releasedNote && (
+        <p className="panel-note" data-testid="subject-released">
+          {releasedNote}
+        </p>
+      )}
+    </>
   );
 }
