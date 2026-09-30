@@ -154,3 +154,48 @@ export function fitModelToStage(model, targetHeightM) {
     fittedCenter: toArray(fitted.getCenter(new Vector3())),
   };
 }
+
+
+/**
+ * Re-fits a stage built by fitModelToStage after the model was rotated
+ * (manual orientation fix): same Box3 centering and scaling, in place, so the
+ * stage object (and everything attached to it) stays the same.
+ */
+export function refitModelStage(stage, targetHeightM) {
+  const offset = stage.children[0];
+  const model = offset.children[0];
+  stage.scale.setScalar(1);
+  offset.position.set(0, 0, 0);
+  stage.updateMatrixWorld(true);
+  const box = new Box3().setFromObject(model, true);
+  const size = box.getSize(new Vector3());
+  if (box.isEmpty() || !(size.y > 1e-9)) throw new Error('The model has no height after rotating.');
+  const center = box.getCenter(new Vector3());
+  // The stage may sit below a parent (the 'subject' group at the origin).
+  const parentInverse = stage.parent ? stage.parent.matrixWorld.clone().invert() : null;
+  if (parentInverse) {
+    center.applyMatrix4(parentInverse);
+    box.min.applyMatrix4(parentInverse);
+  }
+  offset.position.set(-center.x, -box.min.y, -center.z);
+  stage.scale.setScalar(targetHeightM / size.y);
+  stage.updateMatrixWorld(true);
+  const fitted = new Box3().setFromObject(stage, true);
+  return { scale: stage.scale.x, fittedSize: toArray(fitted.getSize(new Vector3())), fittedMin: toArray(fitted.min), fittedCenter: toArray(fitted.getCenter(new Vector3())) };
+}
+
+/**
+ * Puts the lowest point of the (posed) model back on the floor (y = 0)
+ * without changing its scale — used after a pose is imported.
+ * @returns {number} vertical shift in meters
+ */
+export function groundModelStage(stage) {
+  const offset = stage.children[0];
+  stage.updateMatrixWorld(true);
+  const box = new Box3().setFromObject(stage, true);
+  if (box.isEmpty()) return 0;
+  const shift = -box.min.y;
+  offset.position.y += shift / stage.scale.y;
+  stage.updateMatrixWorld(true);
+  return shift;
+}

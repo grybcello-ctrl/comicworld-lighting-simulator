@@ -1,28 +1,43 @@
 /** Derived optics for the camera panel and the viewfinder (same numbers in both). */
-import { CAMERA_LIMITS, getBodyById, getLensById } from '../config/cameraConfig.js';
+import { CAMERA_LIMITS, getAspectById, getBodyById, getLensById } from '../config/cameraConfig.js';
 import {
   anglesOfView,
   availableFNumbers,
   blurDiameterMm,
   cocLimitMm,
   cropFactor,
+  cropFrame,
   depthOfField,
   lensState,
   minFocusDistanceM,
 } from '../utils/cameraOptics.js';
 
+/**
+ * Image frame of the current aspect setting (mm), with its ratio label.
+ * The 4:3 default is the full sensor, so nothing changes until a crop is chosen.
+ */
+export function selectCameraFrame(settings) {
+  const body = getBodyById(settings.bodyId);
+  const aspect = getAspectById(settings.aspectId);
+  const [w, h] = settings.aspectFlipped ? [aspect.height, aspect.width] : [aspect.width, aspect.height];
+  return { ...cropFrame(body.sensor, w / h), label: `${w}:${h}`, aspectId: aspect.id, flipped: Boolean(settings.aspectFlipped) };
+}
+
 export function selectCameraOptics(settings) {
   const body = getBodyById(settings.bodyId);
   const lens = getLensById(settings.lensId);
   const { sensor } = body;
-  const crop = cropFactor(sensor);
+  // Angles, equivalents, blur shares and the DoF criterion follow the image
+  // frame (a crop has a smaller diagonal, i.e. a larger enlargement).
+  const frame = selectCameraFrame(settings);
+  const crop = cropFactor(frame);
   const optics = lensState({
     focalLengthMm: lens.focalLengthMm,
     fNumber: settings.fNumber,
     focusDistanceM: settings.focusDistanceM,
-    sensor,
+    sensor: frame,
   });
-  const cocMm = cocLimitMm(sensor);
+  const cocMm = cocLimitMm(frame);
   const dof = depthOfField(optics, cocMm);
   const { faceDistanceM, eyeDistanceM } = settings;
   const faceBlurMm = blurDiameterMm(optics, faceDistanceM);
@@ -33,12 +48,13 @@ export function selectCameraOptics(settings) {
     body,
     lens,
     sensor,
+    frame,
     optics,
     dof,
     cocMm,
     crop,
     fNumbers: availableFNumbers(lens),
-    angles: anglesOfView(sensor, lens.focalLengthMm),
+    angles: anglesOfView(frame, lens.focalLengthMm),
     equivalentFocalLengthMm: lens.focalLengthMm * crop,
     equivalentFNumber: settings.fNumber * crop,
     focusRangeM: { min: minFocusDistanceM(lens), max: CAMERA_LIMITS.focusDistanceM.max },
@@ -50,8 +66,8 @@ export function selectCameraOptics(settings) {
     eyeInFocus: inFocus(eyeDistanceM),
     magnification,
     // Frame size at the focus plane (m).
-    fieldWidthM: sensor.widthMm / magnification / 1000,
-    fieldHeightM: sensor.heightMm / magnification / 1000,
+    fieldWidthM: frame.widthMm / magnification / 1000,
+    fieldHeightM: frame.heightMm / magnification / 1000,
   };
 }
 

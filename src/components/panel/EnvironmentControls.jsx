@@ -1,4 +1,4 @@
-import { Box, Crosshair, Grid2x2, Image, MoveDiagonal2, MoveHorizontal, MoveVertical, RotateCcw, Sparkles, SunDim } from 'lucide-react';
+import { Box, Crosshair, Grid2x2, Image, MoveDiagonal2, MoveHorizontal, MoveVertical, RotateCcw, Sparkles, SunDim, UnfoldVertical } from 'lucide-react';
 import { ENVIRONMENT_ADJUST_DEFAULTS, ENVIRONMENT_ADJUST_LIMITS } from '../../config/environmentConfig.js';
 import { resetBokehOffset, setViewToggle, setViewValue, useViewState } from '../../state/viewStore.js';
 import { IconSlider } from '../ui/IconSlider.jsx';
@@ -48,6 +48,17 @@ export function EnvironmentControls() {
         disabled={!view.showBackground}
         onChange={(value) => setViewValue('backgroundBrightness', value)}
         formatValue={formatBrightness}
+      />
+      <IconSlider
+        icon={UnfoldVertical}
+        label="Background Distance"
+        tooltip="Background distance (배경 거리): subject → wall, 1–50 m. Light on the wall falls off with the inverse square of the real distance; in Camera View the wall blurs by its real depth."
+        value={view.backgroundDistanceM}
+        {...ENVIRONMENT_ADJUST_LIMITS.backgroundDistanceM}
+        defaultValue={ENVIRONMENT_ADJUST_DEFAULTS.backgroundDistanceM}
+        disabled={!view.showBackground}
+        onChange={(value) => setViewValue('backgroundDistanceM', value)}
+        formatValue={(value) => `${value.toFixed(1)} m`}
       />
       {BOKEH_SLIDERS.map(({ key, icon, label }) => (
         <IconSlider

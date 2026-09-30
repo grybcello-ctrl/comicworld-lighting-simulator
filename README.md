@@ -47,7 +47,12 @@ src/
 │  ├─ shadowModel.js          # Apparent-size shadows → shadow.radius / map size
 │  ├─ beamProfile.js          # Beam profile, flattening, energy (effective solid angle)
 │  ├─ parabolicReflector.js   # Focusing-rod head travel, dish irradiance (glow)
-│  ├─ modelLoader.js          # Local glTF/GLB loading (Draco, Meshopt)
+│  ├─ modelLoader.js          # Local glTF/GLB/OBJ/FBX loading (Draco, Meshopt)
+│  ├─ legacyModelLoader.js    # OBJ (+ MTL) and FBX subjects, Phong/Lambert → PBR
+│  ├─ modelOrientation.js     # Auto front alignment (rig frame, mirror symmetry)
+│  ├─ humanoidRig.js          # Bone name → canonical humanoid map (Mixamo, UE, VRM, BVH …)
+│  ├─ poseFileLoader.js       # Pose files: .glb/.gltf, .fbx, .bvh
+│  ├─ poseRetarget.js         # Rest-pose-aware pose retargeting
 │  ├─ modelFileSet.js         # Multi-file .gltf/.glb: main file + Blob URL map + URL modifier
 │  ├─ externalTextureBinder.js # Binds unreferenced images to materials by file name
 │  ├─ gltfSpecGlossPlugin.js  # KHR_materials_pbrSpecularGlossiness → MeshPhysicalMaterial
@@ -67,7 +72,7 @@ src/
    │  ├─ ScreenshotBridge.jsx # Capture without helper meshes
    │  ├─ PoseController.jsx   # TransformControls (rotate) on the selected bone
    │  └─ fixtures/index.js    # shape key → 3D renderer registry
-   ├─ viewport/               # Viewfinder overlay, Take Screenshot button
+   ├─ viewport/               # Viewfinder overlay, Camera View + aspect toolbar, Take Screenshot
    ├─ ui/                     # Accordion, IconSlider + Chip, TooltipLayer
    └─ panel/                  # InfoPanel (left), RightPanel + lighting/LightAccordion (right), ModeTabs
 ```
@@ -223,7 +228,7 @@ The tabs at the top of the panel switch `appMode` (`state/cameraStore.js`) betwe
 - **Bodies:** FUJIFILM GFX100S and GFX100S II, both with a 43.8 × 32.9 mm sensor.
 - **Lenses:** GF55mmF1.7, GF55mm F3.5, GF80mmF1.7 and GF110mmF2.
   - The GF55mm F3.5 is not a Fujifilm catalogue lens. It is modeled as requested; the closest real lens is the GF50mmF3.5 R LM WR, whose 0.35 m close focus is used.
-- **Angle of view:** the 4:3 sensor frame is the largest centered rectangle that fits the canvas. `camera.fov` is chosen so that frame spans exactly the lens's angle of view, and `filmGauge` is set so `getFocalLength()` returns the lens focal length.
+- **Angle of view:** the image frame (the 4:3 sensor, or an aspect crop of it, see below) is the largest centered rectangle that fits the canvas. `camera.fov` is chosen so that frame spans exactly the lens's angle of view, and `filmGauge` is set so `getFocalLength()` returns the lens focal length.
   - The diagonals come out at 52.9° / 37.8° / 28.0°, matching Fujifilm's specs.
   - The overlay masks everything outside the frame.
 - **F-Stop:** the slider runs in 1/3 stops from the lens's maximum aperture to f/16. Changing lens snaps the f-number to the nearest stop that lens offers.
@@ -282,7 +287,7 @@ None of these cast shadows or emit light. With the background and spheres off, b
   3. It restores the helpers and renders again, all in the same task, so the screen never shows the frame without helpers.
   4. An off-screen 2D canvas adds a HUD with the camera, lens, angle of view, aperture, focus, DoF and every light that is on (power, Ws, azimuth/elevation/distance, XYZ, color). The result is downloaded as a PNG.
 
-  In camera mode the image is cropped to the 4:3 sensor frame.
+  In camera mode the image is cropped to the current image frame (sensor or aspect crop).
 
 
 ### Environment adjustments
@@ -300,6 +305,63 @@ None of these cast shadows or emit light. With the background and spheres off, b
 - **Camera mode:** the gizmo only exists in lighting mode, but the pose carries over.
 - **Screenshots** never include the gizmo.
 - **The mannequin** has no skeleton, so Pose Mode needs a rigged glTF/GLB (e.g. a Mixamo character).
+
+### Background distance
+
+**Background Distance** (Environment accordion, 1–50 m, default 3 m) is the distance from the subject to the cyc wall. The wall sits at `z = −distance`. The floor apron always runs to the camera side, so there is no gap in the floor.
+- **Wall size** grows with the distance so the wall still fills the frame: at least 8 × 4 m, and ±24° × 18° seen from 4 m in front of the subject. At 3 m it is the same as before.
+- **Light falloff** is the real inverse square of each light's distance to the wall. The info panel shows each light's wall level relative to the subject (e.g. key −9.7 EV at 50 m).
+  - The Zoom Reflector's SpotLight used to sit at the reflector instead of its virtual source 0.3 m behind it, so a distant wall came out 0.84 EV too bright. It now sits at the virtual source (error 0.00 EV). Every other rig is unchanged.
+- **Shadows** reach the wall: each light's shadow camera `far` grows by 1.5 × the distance beyond 3 m.
+- **Depth of field:** in Camera View the wall blurs according to its real depth. At f/2.8 on the 80 mm, the blur is Ø 0.34 mm at 3 m and 0.66 mm at 50 m.
+- **Bokeh Z** reaches −45 m, so the spheres can follow a far wall.
+
+### Camera View and aspect crops
+
+**Camera View** (top left of the 3D view) is the same switch as the Camera tab. Next to it are **4:3, 2:3, 4:5, 16:9, 2.35:1, 1.43:1** and a **Landscape / Portrait** toggle that swaps the ratio (2:3 ↔ 3:2, 16:9 ↔ 9:16 …).
+- **The frame** (`cropFrame` in `utils/cameraOptics.js`) is the largest rectangle of that ratio inside the 43.8 × 32.9 mm sensor. For portrait ratios the sensor is turned upright first. 4:3 is the full sensor.
+- **The canvas is masked, not resized.** `camera.aspect` stays the canvas aspect, because any other value would stretch the image. Instead:
+  1. The frame is fitted into the canvas.
+  2. `camera.fov` is set so the frame spans the lens's angle of view for the cropped size.
+  3. A CSS overlay letterboxes or pillarboxes the rest.
+- **Angle of view, 35 mm equivalent, crop factor, circle of confusion and DoF** all use the cropped frame. The screenshot is cropped to it (e.g. 3:2 → 780 × 520 px).
+
+### Front alignment of imported models
+
+Every imported model (glTF/GLB, OBJ, FBX) is turned to stand upright and face the camera (+Z) before the `Box3` fit (`utils/modelOrientation.js`). A plain `lookAt(camera.position)` cannot do this, because it needs to know where the model's front is.
+1. **Rig:** with a humanoid skeleton, up = hips → head, left = right → left upper arm, and front = left × up. Directions within 10° of a file axis snap to that axis.
+2. **Geometry**, for models without a skeleton:
+   - **Up** is the tallest axis. If two axes are about as tall, as in a T-pose, the mirror-symmetric one is ruled out.
+   - **Upside down** is detected from the height of the vertex centroid.
+   - **Left–right** is the best mirror-symmetry plane.
+   - **Front vs. back** comes from the nose (the narrow side of the face) and the toes.
+3. **Weak evidence** keeps the file's own front.
+
+**90° / 90° / 180° / Stand up** (Subject & Pose) correct the result by hand. The readout shows what was detected and applied.
+
+### Import Pose
+
+**Import Pose** (Subject & Pose) reads a pose or animation file and applies it to the loaded model's skeleton. It accepts:
+- **.glb / .gltf** (skeleton + animations).
+- **.fbx**, e.g. a Mixamo download with or without skin.
+- **.bvh** motion capture.
+
+Files with several clips show one chip per clip, and a frame slider picks the frame. **Clear** restores the rest pose.
+- **Bone mapping** (`utils/humanoidRig.js`) works by name, for example Mixamo (`mixamorig:`), Unreal, VRM, Character Creator, Rigify, 3ds Max Biped and BVH/DAZ (`hip`, `abdomen`, `rShldr` …).
+- **Retargeting** (`utils/poseRetarget.js`) works per bone:
+  1. It takes the joint's rotation relative to the source rest pose and expresses it in the target's body frame.
+  2. It swings the bone so that the direction to its child matches the source exactly.
+
+  This makes T-pose sources work on A-pose targets, and the other way round. The hips carry the whole-body rotation.
+- **Limits:**
+  - Root translation is not applied; the posed model is set back on the floor.
+  - The twist of end bones (hands, feet, head) is approximate.
+  - Bones the source does not have (e.g. BVH without spine2, toes or third finger joints) keep their rest rotation.
+  - The mannequin has no skeleton, so poses need a rigged model.
+
+### OBJ and FBX subjects
+
+Subjects can also be `.obj` (select it together with its `.mtl` and textures) or `.fbx`. Their Phong/Lambert materials become `MeshStandardMaterial`, which the RectAreaLight softboxes need.
 
 ## Layout (Lightroom-style)
 

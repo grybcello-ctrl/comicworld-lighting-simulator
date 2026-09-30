@@ -12,13 +12,14 @@ import {
   Sprite,
   SpriteMaterial,
 } from 'three';
-import { APP_MODES, getBodyById, getLensById } from '../../config/cameraConfig.js';
+import { APP_MODES, getLensById } from '../../config/cameraConfig.js';
 import {
   ANGLE_GUIDE_CONFIG,
   BOKEH_SPHERES_CONFIG,
   CYCLORAMA_CONFIG,
   FLOOR_GRID_CONFIG,
 } from '../../config/environmentConfig.js';
+import { selectCameraFrame } from '../../state/cameraSelectors.js';
 import { useCameraState } from '../../state/cameraStore.js';
 import { useViewState } from '../../state/viewStore.js';
 import { angleOfViewDeg } from '../../utils/cameraOptics.js';
@@ -36,8 +37,22 @@ function useDisposeOnUnmount(...resources) {
 }
 
 /**
+ * Wall size for a background `distanceM` behind the subject: at least the
+ * studio size (8 × 4 m), larger when far so the wall still fills a typical
+ * frame (camera ~frameReferenceM in front of the subject, 55 mm lens).
+ */
+export function cycloramaSize(distanceM, config = CYCLORAMA_CONFIG) {
+  const reach = distanceM + config.frameReferenceM;
+  return {
+    widthM: Math.max(config.widthM, 2 * reach * Math.tan(config.frameHalfWidthDeg * DEG)),
+    heightM: Math.max(config.heightM, reach * Math.tan(config.frameHalfHeightDeg * DEG) + 1.5),
+  };
+}
+
+/**
  * Profile of the sweep in the (z, y) plane, front to top, with normals:
- * floor apron → cove (quarter circle) → wall.
+ * floor apron → cove (quarter circle) → wall. The apron always reaches the
+ * camera side, so a distant wall gets a longer floor, not a gap.
  */
 function cycloramaProfile({ wallZ, heightM, coveRadiusM: r, apronFrontZ, apronLiftM: lift, coveSegments }) {
   const points = [
@@ -79,9 +94,17 @@ function createCycloramaGeometry(config) {
   return geometry;
 }
 
-/** 18% gray sweep: receives shadows, never casts them (lights behind it still reach the subject). */
-function Cyclorama({ brightness }) {
-  const geometry = useMemo(() => createCycloramaGeometry(CYCLORAMA_CONFIG), []);
+/**
+ * 18% gray sweep: receives shadows, never casts them (lights behind it still
+ * reach the subject). The wall stands `distanceM` behind the subject; its
+ * lighting (inverse-square falloff from each light) and its blur in camera
+ * mode (per-pixel depth) follow from the real distance.
+ */
+function Cyclorama({ brightness, distanceM }) {
+  const geometry = useMemo(
+    () => createCycloramaGeometry({ ...CYCLORAMA_CONFIG, ...cycloramaSize(distanceM), wallZ: -distanceM }),
+    [distanceM],
+  );
   useDisposeOnUnmount(geometry);
   // setHex converts sRGB #767676 to linear 0.184; scaling the linear value
   // scales the reflectance (2× = +1 EV). 0 = black.
@@ -220,8 +243,9 @@ function createProtractor() {
 
 /** Photo camera floor position and its horizontal angle of view (a wedge on the floor). */
 function CameraWedge() {
-  const { bodyId, lensId, shootingDistanceM } = useCameraState();
-  const horizontalAovDeg = angleOfViewDeg(getBodyById(bodyId).sensor.widthMm, getLensById(lensId).focalLengthMm);
+  const settings = useCameraState();
+  const { lensId, shootingDistanceM } = settings;
+  const horizontalAovDeg = angleOfViewDeg(selectCameraFrame(settings).widthMm, getLensById(lensId).focalLengthMm);
   const objects = useMemo(() => {
     const c = ANGLE_GUIDE_CONFIG;
     const y = c.heightM;
@@ -274,6 +298,7 @@ export function StudioEnvironment({ appMode }) {
     showFloorGrid,
     showAngleGuide,
     backgroundBrightness,
+    backgroundDistanceM,
     bokehOffsetX,
     bokehOffsetY,
     bokehOffsetZ,
@@ -284,7 +309,7 @@ export function StudioEnvironment({ appMode }) {
   }, [showBackground, showBokehSpheres, showFloorGrid, showAngleGuide, invalidate]);
   return (
     <group name="studio-environment">
-      {showBackground && <Cyclorama brightness={backgroundBrightness} />}
+      {showBackground && <Cyclorama brightness={backgroundBrightness} distanceM={backgroundDistanceM} />}
       {showBokehSpheres && <BokehSpheres offset={[bokehOffsetX, bokehOffsetY, bokehOffsetZ]} />}
       {showFloorGrid && <FloorGrid />}
       {showAngleGuide && <AngleGuide showCamera={appMode === APP_MODES.LIGHTING} />}

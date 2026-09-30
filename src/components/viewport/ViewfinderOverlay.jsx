@@ -11,7 +11,7 @@ const FOCUS_LABELS = {
 
 /**
  * Camera-mode frame lines over the canvas. The render covers the whole canvas;
- * the sensor's 4:3 frame is the largest centered rectangle that fits (same fit
+ * the image frame (sensor, or its aspect crop) is the largest centered rectangle that fits (same fit
  * as frameCanvasFit in cameraOptics.js), everything outside it is masked.
  * Pure HTML/CSS: no effect on the WebGL render.
  */
@@ -20,8 +20,8 @@ export function ViewfinderOverlay() {
   const derived = useMemo(() => selectCameraOptics(settings), [settings]);
   if (settings.appMode !== APP_MODES.CAMERA) return null;
 
-  const { sensor, lens, dof } = derived;
-  const aspect = sensor.widthMm / sensor.heightMm;
+  const { frame, lens, dof } = derived;
+  const aspect = frame.aspect;
   return (
     <div
       className="viewfinder"

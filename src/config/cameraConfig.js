@@ -59,7 +59,28 @@ export const CAMERA_LIMITS = Object.freeze({
   focusDistanceM: { max: 30 },
 });
 
+/**
+ * Output aspect ratios (width : height as written). The frame is the largest
+ * rectangle of that ratio inside the sensor — a crop, like the camera's own
+ * aspect settings, so the lens's angle of view is kept along the uncropped
+ * side. Ratios within 1% of the sensor's 43.8 : 32.9 use the full sensor.
+ * The orientation toggle swaps width and height (2:3 ↔ 3:2); a portrait
+ * frame turns the sensor upright (32.9 × 43.8), like turning the camera.
+ */
+export const ASPECT_RATIOS = Object.freeze([
+  { id: '4:3', label: '4:3', width: 4, height: 3 },
+  { id: '2:3', label: '2:3', width: 2, height: 3 },
+  { id: '4:5', label: '4:5', width: 4, height: 5 },
+  { id: '16:9', label: '16:9', width: 16, height: 9 },
+  { id: '2.35:1', label: '2.35:1', width: 2.35, height: 1 },
+  { id: '1.43:1', label: '1.43:1', width: 1.43, height: 1 },
+]);
+export const getAspectById = (id) => ASPECT_RATIOS.find((aspect) => aspect.id === id) ?? ASPECT_RATIOS[0];
+
 export const CAMERA_DEFAULTS = Object.freeze({
+  aspectId: '4:3',
+  // false = the ratio as written; true = width and height swapped.
+  aspectFlipped: false,
   bodyId: 'gfx100s-ii',
   lensId: 'gf80-f1.7',
   fNumber: 2.8,

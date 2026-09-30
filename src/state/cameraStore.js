@@ -20,6 +20,7 @@ import {
   CAMERA_LIMITS,
   CAMERA_OPTICS_CONFIG,
   FOCUS_MODES,
+  getAspectById,
   getBodyById,
   getLensById,
 } from '../config/cameraConfig.js';
@@ -125,6 +126,14 @@ export const cameraActions = {
   },
   setBody(bodyId) {
     setState({ bodyId: getBodyById(bodyId).id });
+  },
+  /** Output aspect ratio (a crop of the sensor), e.g. '2:3'. */
+  setAspect(aspectId) {
+    setState({ aspectId: getAspectById(aspectId).id });
+  },
+  /** Landscape ↔ portrait: swaps the ratio's width and height (2:3 ↔ 3:2). */
+  toggleAspectOrientation() {
+    setState({ aspectFlipped: !state.aspectFlipped });
   },
   /** A new lens keeps the aperture if it can, else snaps to the nearest offered stop. */
   setLens(lensId) {

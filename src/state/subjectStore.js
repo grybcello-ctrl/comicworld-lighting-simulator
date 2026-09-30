@@ -19,6 +19,7 @@
  *     URLs immediately (modelLoader.js).
  */
 import { useSyncExternalStore } from 'react';
+import { Quaternion, Vector3 } from 'three';
 import { SUBJECT_CONFIG, SUBJECT_TYPES } from '../config/sceneConfig.js';
 import { disposeObject3D } from '../utils/disposeObject3D.js';
 import { loadModelFromFiles, ModelLoadError } from '../utils/modelLoader.js';
@@ -26,9 +27,12 @@ import { ensureColorTextureSpaces } from '../utils/textureColorSpace.js';
 import {
   collectModelStats,
   fitModelToStage,
+  groundModelStage,
   prepareMeshesForLighting,
+  refitModelStage,
   stripEmbeddedLightsAndCameras,
 } from '../utils/modelPreparation.js';
+import { alignModelToFront } from '../utils/modelOrientation.js';
 
 /**
  * @typedef {Object} CustomModelState
@@ -43,6 +47,9 @@ import {
  */
 const EMPTY_MODEL = Object.freeze({
   id: 0,
+  // Bumped when the model is re-oriented or re-posed in place (same object):
+  // shadows and AF targets are refreshed for every revision.
+  revision: 0,
   object: null,
   blobUrls: null,
   info: null,
@@ -72,6 +79,43 @@ export const getSubjectState = () => state;
 
 /** React hook: current subject state. Works inside and outside the Canvas. */
 export const useSubjectState = () => useSyncExternalStore(subscribe, getSubjectState);
+
+const showsCustom = (subject) => subject.subjectType === SUBJECT_TYPES.CUSTOM && subject.model.object !== null;
+/** Changes whenever the rendered subject or its shape changes (shadows, AF). */
+export const subjectKeyOf = (subject) =>
+  showsCustom(subject) ? `custom-${subject.model.id}-r${subject.model.revision}` : SUBJECT_TYPES.MANNEQUIN;
+/** Changes only when another model is shown (the pose rest state belongs to it). */
+export const skeletonKeyOf = (subject) => (showsCustom(subject) ? `custom-${subject.model.id}` : SUBJECT_TYPES.MANNEQUIN);
+
+const WORLD_AXES = { x: new Vector3(1, 0, 0), y: new Vector3(0, 1, 0), z: new Vector3(0, 0, 1) };
+
+/**
+ * Manual orientation fix for the custom model: rotates it about a world axis
+ * ('y' = turn, 'x' = tip forward/back, 'z' = roll) and re-fits it in place
+ * (feet on the floor, centered, 1.725 m tall).
+ */
+export function rotateCustomModel(axis, degrees) {
+  const { object, info } = state.model;
+  if (!object || !WORLD_AXES[axis]) return;
+  const root = object.children[0].children[0];
+  root.quaternion.premultiply(new Quaternion().setFromAxisAngle(WORLD_AXES[axis], (degrees * Math.PI) / 180));
+  const fit = refitModelStage(object, SUBJECT_CONFIG.targetHeightM);
+  const manual = { ...(info.orientation.manual ?? { x: 0, y: 0, z: 0 }) };
+  manual[axis] = (((manual[axis] + degrees) % 360) + 540) % 360 - 180;
+  setModel({
+    revision: state.model.revision + 1,
+    info: { ...info, ...fit, orientation: { ...info.orientation, manual } },
+  });
+}
+
+/** After an imported pose: the lowest point back on the floor, then refresh shadows/AF. */
+export function groundCustomModel() {
+  const { object } = state.model;
+  if (!object) return 0;
+  const shift = groundModelStage(object);
+  setModel({ revision: state.model.revision + 1 });
+  return shift;
+}
 
 function cancelActiveLoad() {
   loadSequence++;
@@ -139,6 +183,8 @@ export async function loadCustomModel(files) {
     const colorSpaces = ensureColorTextureSpaces(loaded.scene);
     const stats = collectModelStats(loaded.scene);
     if (prepared.meshes === 0) throw new ModelLoadError(`${loaded.fileName} contains no meshes.`);
+    // Stand the model on +Y facing the camera (+Z), whatever the file's axes.
+    const orientation = alignModelToFront(loaded.scene);
     const fit = fitModelToStage(loaded.scene, SUBJECT_CONFIG.targetHeightM);
 
     // Swap first, then free the previous model (it is detached immediately).
@@ -147,6 +193,7 @@ export async function loadCustomModel(files) {
       ...state,
       model: {
         id: token,
+        revision: 0,
         object: fit.stage,
         blobUrls: loaded.blobUrls,
         info: {
@@ -185,6 +232,13 @@ export async function loadCustomModel(files) {
           fittedSize: fit.fittedSize,
           fittedMin: fit.fittedMin,
           fittedCenter: fit.fittedCenter,
+          orientation: {
+            method: orientation.method,
+            rotatedDeg: orientation.rotatedDeg,
+            confident: orientation.confident,
+            detail: orientation.detail,
+            manual: { x: 0, y: 0, z: 0 },
+          },
         },
         loadingFileName: null,
         error: null,

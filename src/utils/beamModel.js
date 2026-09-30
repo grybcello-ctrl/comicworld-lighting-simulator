@@ -262,22 +262,36 @@ export function resolveLightRig({
     outputWs * RENDER_CONFIG.candelaPerWattSecond * 2 ** (optics.centerGainStops - lossStops);
   const falloff = computeDistanceFalloff(onAxisCd, distance, optics.virtualSourceOffsetM);
   const angle = toSpotHalfAngle(optics.beamAngleDeg);
-  const shadow = computeShadowParams({ sourceDiameterM: optics.sourceDiameterM, distance, halfAngle: angle });
+  // Virtual source d0 behind the fixture (e.g. a zoom reflector): the
+  // SpotLight sits at that point with true inverse square (decay 2), so the
+  // falloff E ∝ 1/(D + d0)² stays exact at every distance D — also on a wall
+  // tens of meters away — while the value at the subject is unchanged.
+  // (A decay < 2 fitted at the subject would over-light far surfaces:
+  // +0.8 EV at 50 m for d0 = 0.3 m.) d0 = 0 is the previous rig exactly.
+  const d0 = Math.max(optics.virtualSourceOffsetM ?? 0, 0);
+  const apexToSubjectM = distance + d0;
+  const shadow = computeShadowParams({
+    sourceDiameterM: optics.sourceDiameterM,
+    distance,
+    halfAngle: angle,
+    frustumDistance: apexToSubjectM,
+  });
 
   return {
     model,
     outputWs,
     onAxisCd,
     spot: {
-      intensity: falloff.intensity,
+      intensity: d0 > 0 ? falloff.illuminance * apexToSubjectM ** 2 : falloff.intensity,
       angle,
       penumbra: clamp(optics.penumbra, 0, 1),
-      decay: falloff.decay,
+      decay: d0 > 0 ? 2 : falloff.decay,
       profile: isFlatProfile(optics.profile) ? null : optics.profile,
       shadow,
-      // SpotLight apex = fixture origin; rays helper starts at the modifier front.
-      apexOffsetM: 0,
-      exitDistanceM: modifier.geometry.depth ?? 0.03,
+      // SpotLight apex = fixture origin, or the virtual source behind it;
+      // the rays helper starts at the modifier front.
+      apexOffsetM: -d0,
+      exitDistanceM: (modifier.geometry.depth ?? 0.03) + d0,
     },
     area: null,
     info: {
@@ -285,7 +299,7 @@ export function resolveLightRig({
       beamAngleDeg: optics.beamAngleDeg,
       penumbra: optics.penumbra,
       decay: falloff.decay,
-      footprintM: 2 * distance * Math.tan(angle),
+      footprintM: 2 * apexToSubjectM * Math.tan(angle),
       gainStops: optics.centerGainStops,
       lossStops,
       sourceDiameterM: optics.sourceDiameterM,

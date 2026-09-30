@@ -3,10 +3,10 @@ import { useLayoutEffect, useRef } from 'react';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { APP_MODES } from '../../config/cameraConfig.js';
 import { POSE_CONFIG } from '../../config/environmentConfig.js';
-import { SUBJECT_TARGET, SUBJECT_TYPES } from '../../config/sceneConfig.js';
+import { SUBJECT_TARGET } from '../../config/sceneConfig.js';
 import { cameraActions } from '../../state/cameraStore.js';
 import { commitPose, getBoneObject, registerSkeleton, setPoseCommitHandler, usePoseState } from '../../state/poseStore.js';
-import { useSubjectState } from '../../state/subjectStore.js';
+import { skeletonKeyOf, useSubjectState } from '../../state/subjectStore.js';
 import { findEyeTarget, findFacePoint } from '../../utils/eyeAutofocus.js';
 
 /** Shadow maps render on demand (StudioLight.jsx): request one refresh of every map. */
@@ -36,8 +36,10 @@ export function PoseController({ appMode }) {
   const orbit = useThree((state) => state.controls);
   const invalidate = useThree((state) => state.invalidate);
   const { poseMode, selectedBoneId } = usePoseState();
-  const { subjectType, model } = useSubjectState();
-  const subjectKey = subjectType === SUBJECT_TYPES.CUSTOM && model.object ? `custom-${model.id}` : 'mannequin';
+  const subject = useSubjectState();
+  const { model } = subject;
+  // Rest rotations belong to a model, not to its re-orientation/pose revisions.
+  const subjectKey = skeletonKeyOf(subject);
   const gizmoRef = useRef(null);
 
   // Bone list of the current subject (the mannequin has no skeleton).

@@ -11,8 +11,9 @@ import {
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { CAMERA_OPTICS_CONFIG, DOF_CONFIG, getBodyById, getLensById } from '../../config/cameraConfig.js';
+import { CAMERA_OPTICS_CONFIG, DOF_CONFIG, getLensById } from '../../config/cameraConfig.js';
 import { PhysicalBokehPass } from '../../postprocessing/PhysicalBokehPass.js';
+import { selectCameraFrame } from '../../state/cameraSelectors.js';
 import { useCameraState } from '../../state/cameraStore.js';
 import { cameraPose, frameCanvasFit, lensState } from '../../utils/cameraOptics.js';
 import { compensatedBackground } from '../../utils/toneMappingInverse.js';
@@ -36,7 +37,7 @@ export function CameraPostFX() {
   const dpr = useThree((state) => state.viewport.dpr);
   const invalidate = useThree((state) => state.invalidate);
   const settings = useCameraState();
-  const { bodyId, lensId, fNumber, focusDistanceM, shootingDistanceM, cameraHeightM, aimHeightM } = settings;
+  const { bodyId, lensId, fNumber, focusDistanceM, shootingDistanceM, cameraHeightM, aimHeightM, aspectId, aspectFlipped } = settings;
 
   const photoCamera = useMemo(() => {
     const camera = new PerspectiveCamera();
@@ -81,9 +82,12 @@ export function CameraPostFX() {
 
   // Camera pose, lens → FOV, and the DoF parameters.
   useLayoutEffect(() => {
-    const body = getBodyById(bodyId);
     const lens = getLensById(lensId);
-    const fit = frameCanvasFit(body.sensor, lens.focalLengthMm, size.width, size.height);
+    // The aspect crop (selectCameraFrame) is the frame fitted into the canvas.
+    // camera.aspect stays the canvas aspect (undistorted pixels); the frame's
+    // ratio sets the FOV and the letterbox/pillarbox mask shows only the frame.
+    const frame = selectCameraFrame({ bodyId, aspectId, aspectFlipped });
+    const fit = frameCanvasFit(frame, lens.focalLengthMm, size.width, size.height);
     const pose = cameraPose({ shootingDistanceM, cameraHeightM, aimHeightM });
 
     photoCamera.position.set(...pose.position);
@@ -96,7 +100,7 @@ export function CameraPostFX() {
     photoCamera.updateProjectionMatrix();
     photoCamera.updateMatrixWorld();
 
-    const optics = lensState({ focalLengthMm: lens.focalLengthMm, fNumber, focusDistanceM, sensor: body.sensor });
+    const optics = lensState({ focalLengthMm: lens.focalLengthMm, fNumber, focusDistanceM, sensor: frame });
     pipelineRef.current.bokehPass.setLens({
       ...optics,
       pxPerMm: fit.pxPerMm * dpr, // drawing-buffer pixels
@@ -113,6 +117,8 @@ export function CameraPostFX() {
     shootingDistanceM,
     cameraHeightM,
     aimHeightM,
+    aspectId,
+    aspectFlipped,
     size.width,
     size.height,
     dpr,
