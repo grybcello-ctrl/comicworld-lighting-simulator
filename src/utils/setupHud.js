@@ -76,6 +76,14 @@ export function buildSetupHud({ appMode, lights, subject, camera, optics, orbitF
       text: `${lens.focalLengthMm} mm (~${Math.round(optics.equivalentFocalLengthMm)} mm FF) · AoV ${angles.horizontalDeg.toFixed(1)}° × ${angles.verticalDeg.toFixed(1)}° (diag. ${angles.diagonalDeg.toFixed(1)}°)`,
       style: 'detail',
     },
+    ...(optics.fisheye
+      ? [
+          {
+            text: `Fisheye: ${optics.fisheye.projection.exact ? optics.fisheye.projection.name : optics.fisheye.projection.label} (curvature ${optics.fisheye.curvature.toFixed(2)}), strength ${Math.round(optics.fisheye.strength * 100)}%${Number.isFinite(optics.fisheye.imageCircleMm) ? `, image circle Ø ${optics.fisheye.imageCircleMm.toFixed(1)} mm` : ''}`,
+            style: 'detail',
+          },
+        ]
+      : []),
     {
       text: `${formatFNumber(camera.fNumber)} · ${FOCUS_MODE_LABELS[camera.focusMode]} ${formatMeters(camera.focusDistanceM)}${target}`,
       style: 'detail',

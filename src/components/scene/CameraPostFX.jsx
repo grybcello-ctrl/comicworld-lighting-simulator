@@ -11,17 +11,21 @@ import {
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { CAMERA_OPTICS_CONFIG, DOF_CONFIG, getLensById } from '../../config/cameraConfig.js';
+import { CAMERA_OPTICS_CONFIG, DOF_CONFIG, FISHEYE_CONFIG, getLensById } from '../../config/cameraConfig.js';
+import { FisheyeLensPass } from '../../postprocessing/FisheyeLensPass.js';
 import { PhysicalBokehPass } from '../../postprocessing/PhysicalBokehPass.js';
 import { selectCameraFrame } from '../../state/cameraSelectors.js';
 import { useCameraState } from '../../state/cameraStore.js';
 import { cameraPose, frameCanvasFit, lensState } from '../../utils/cameraOptics.js';
+import { fisheyeFaceSizePx, fisheyeProfile, imageCircleRadiusMm } from '../../utils/fisheyeProjection.js';
 import { compensatedBackground } from '../../utils/toneMappingInverse.js';
 
 /**
  * Camera mode renderer: a separate "photo" camera (GFX body + GF lens) and a
  * post-processing chain RenderPass → PhysicalBokehPass (thin-lens DoF) →
- * OutputPass (tone mapping + sRGB, as the direct render).
+ * OutputPass (tone mapping + sRGB, as the direct render). With a fisheye lens
+ * the RenderPass is swapped for FisheyeLensPass (faces around the camera +
+ * lens projection shader); the DoF and output passes stay the same.
  *
  * Mounted only in camera mode. `useFrame(…, 1)`: a positive priority makes r3f
  * skip its own gl.render, so while mounted this is the only scene render;
@@ -37,7 +41,19 @@ export function CameraPostFX() {
   const dpr = useThree((state) => state.viewport.dpr);
   const invalidate = useThree((state) => state.invalidate);
   const settings = useCameraState();
-  const { bodyId, lensId, fNumber, focusDistanceM, shootingDistanceM, cameraHeightM, aimHeightM, aspectId, aspectFlipped } = settings;
+  const {
+    bodyId,
+    lensId,
+    fNumber,
+    focusDistanceM,
+    shootingDistanceM,
+    cameraHeightM,
+    aimHeightM,
+    aspectId,
+    aspectFlipped,
+    fisheyeCurvature,
+    fisheyeStrength,
+  } = settings;
 
   const photoCamera = useMemo(() => {
     const camera = new PerspectiveCamera();
@@ -60,13 +76,19 @@ export function CameraPostFX() {
     const composer = new EffectComposer(gl, target);
     const bokehPass = new PhysicalBokehPass(DOF_CONFIG);
     const outputPass = new OutputPass();
-    composer.addPass(new RenderPass(scene, photoCamera));
+    const renderPass = new RenderPass(scene, photoCamera);
+    // Disabled until a fisheye lens is chosen; its face atlas exists only then.
+    const fisheyePass = new FisheyeLensPass(scene, photoCamera, FISHEYE_CONFIG);
+    fisheyePass.enabled = false;
+    composer.addPass(renderPass);
+    composer.addPass(fisheyePass);
     composer.addPass(bokehPass);
     composer.addPass(outputPass);
-    pipelineRef.current = { composer, bokehPass };
+    pipelineRef.current = { composer, renderPass, fisheyePass, bokehPass };
     return () => {
       pipelineRef.current = null;
       composer.dispose(); // both targets (+ their depth textures) and the copy pass
+      fisheyePass.dispose();
       bokehPass.dispose();
       outputPass.dispose();
       invalidate(); // redraw the lighting view
@@ -101,7 +123,24 @@ export function CameraPostFX() {
     photoCamera.updateMatrixWorld();
 
     const optics = lensState({ focalLengthMm: lens.focalLengthMm, fNumber, focusDistanceM, sensor: frame });
-    pipelineRef.current.bokehPass.setLens({
+    const { renderPass, fisheyePass, bokehPass } = pipelineRef.current;
+    if (lens.fisheye) {
+      // The projection lives in the shader; the perspective FOV is not used.
+      const profile = fisheyeProfile(lens, { fisheyeCurvature, fisheyeStrength });
+      const pxPerMm = fit.pxPerMm * dpr;
+      fisheyePass.setLens({
+        ...profile,
+        imageCircleRadiusMm: imageCircleRadiusMm(profile),
+        pxPerMm,
+        faceSizePx: fisheyeFaceSizePx(profile, pxPerMm, Math.hypot(frame.widthMm, frame.heightMm) / 2, FISHEYE_CONFIG),
+        outsideDistanceM: focusDistanceM, // black outside the circle stays sharp
+      });
+    } else {
+      fisheyePass.releaseTargets();
+    }
+    renderPass.enabled = !lens.fisheye;
+    fisheyePass.enabled = Boolean(lens.fisheye);
+    bokehPass.setLens({
       ...optics,
       pxPerMm: fit.pxPerMm * dpr, // drawing-buffer pixels
       maxCocPx: DOF_CONFIG.maxCocRadiusCssPx * dpr,
@@ -119,6 +158,8 @@ export function CameraPostFX() {
     aimHeightM,
     aspectId,
     aspectFlipped,
+    fisheyeCurvature,
+    fisheyeStrength,
     size.width,
     size.height,
     dpr,

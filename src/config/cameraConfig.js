@@ -38,6 +38,22 @@ export const LENSES = Object.freeze([
   },
   { id: 'gf80-f1.7', name: 'GF80mmF1.7 R WR', focalLengthMm: 80, maxAperture: 1.7, minFocusDistanceM: 0.7 },
   { id: 'gf110-f2', name: 'GF110mmF2 R LM WR', focalLengthMm: 110, maxAperture: 2, minFocusDistanceM: 0.9 },
+  {
+    id: 'ttartisan-11-f2.8-fisheye',
+    name: 'TTArtisan 11mm f/2.8 Fish-eye',
+    focalLengthMm: 11,
+    maxAperture: 2.8,
+    minFocusDistanceM: 0.17,
+    // GFX-mount version: fully manual, no electronic contacts, so no AF.
+    manualFocusOnly: true,
+    // Rendered by FisheyeLensPass (src/postprocessing/FisheyeLensPass.js),
+    // not by the perspective camera. Lens profile: stereographic projection
+    // r = 2f·tan(θ/2) (curvature 0.5, see utils/fisheyeProjection.js), 180°
+    // field → image circle Ø 44 mm, the 35 mm diagonal (43.3 mm) it is made for.
+    fisheye: { curvature: 0.5, strength: 1, maxFieldDeg: 180 },
+    note:
+      'GFX-mount version, manual focus only (no electronic contacts). Modeled as a stereographic 180° fisheye: its Ø 44 mm image circle spans the GFX frame width, the corners fall outside it.',
+  },
 ]);
 
 export const getBodyById = (id) => CAMERA_BODIES.find((body) => body.id === id) ?? CAMERA_BODIES[0];
@@ -157,6 +173,27 @@ export const DOF_CONFIG = Object.freeze({
   maxLinearValue: 64,
   // MSAA samples of the scene render in camera mode.
   msaaSamples: 4,
+});
+
+/**
+ * Fisheye lens rendering (FisheyeLensPass). The scene is rendered into up to
+ * five 90° faces around the photo camera (front, left, right, up, down; the
+ * back face is never inside a ≤ 180° field), then a full-screen shader maps
+ * every output pixel to its ray through the lens projection. The faces are
+ * sized so the most magnified part of the image still gets one face texel per
+ * output pixel, within these bounds.
+ */
+export const FISHEYE_CONFIG = Object.freeze({
+  // Curvature 0 = rectilinear, 0.5 stereographic, 1 equidistant, 1.5 equisolid, 2 orthographic.
+  curvature: { min: 0, max: 2, step: 0.01 },
+  // Share of the fisheye mapping: 1 = as shot, 0 = fully corrected (rectilinear).
+  strength: { min: 0, max: 1, step: 0.01 },
+  minFaceSizePx: 512,
+  maxFaceSizePx: 1024,
+  // Extra texels around each face so bilinear taps never cross a face edge.
+  facePaddingPx: 2,
+  // Width of the soft edge of the image circle (mm on the sensor).
+  circleEdgeMm: 0.15,
 });
 
 /** Viewfinder overlay (frame lines and info strip). */

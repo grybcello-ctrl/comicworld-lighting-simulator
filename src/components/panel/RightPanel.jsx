@@ -19,11 +19,15 @@ import {
   Spotlight,
   Square,
   FileJson,
+  Gauge,
+  Globe,
+  RotateCcw,
+  Spline,
   User,
   View,
 } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
-import { APP_MODES, CAMERA_BODIES, CAMERA_LIMITS, FOCUS_MODES, LENSES } from '../../config/cameraConfig.js';
+import { APP_MODES, CAMERA_BODIES, CAMERA_LIMITS, FISHEYE_CONFIG, FOCUS_MODES, LENSES } from '../../config/cameraConfig.js';
 import { getAllStrobes, getCompatibleModifiers } from '../../config/equipmentRegistry.js';
 import { LIGHTING_PRESETS } from '../../config/lightingPresets.js';
 import { CAMERA_VIEWS } from '../../config/sceneConfig.js';
@@ -187,6 +191,49 @@ function useFocusSliderScale({ min, max }) {
   }, [min, max]);
 }
 
+/**
+ * Fisheye lens settings under the lens selection: projection curvature and
+ * distortion strength, defaulting to the lens profile (double-click an icon
+ * or use the reset button to go back to it).
+ */
+function FisheyeControls({ lens, derived, settings }) {
+  const { fisheye } = derived;
+  const profile = lens.fisheye;
+  const isProfile = settings.fisheyeCurvature === profile.curvature && settings.fisheyeStrength === profile.strength;
+  return (
+    <div className="fisheye-controls" data-testid="fisheye-controls">
+      <IconSlider
+        icon={Spline}
+        label="Fisheye curvature"
+        tooltip="Curvature (곡률) of the lens projection: 0 rectilinear · 0.5 stereographic (this lens) · 1 equidistant · 1.5 equisolid · 2 orthographic. Higher = edges more compressed."
+        value={settings.fisheyeCurvature}
+        {...FISHEYE_CONFIG.curvature}
+        defaultValue={profile.curvature}
+        onChange={cameraActions.setFisheyeCurvature}
+        formatValue={(v) => v.toFixed(2)}
+      />
+      <IconSlider
+        icon={Gauge}
+        label="Fisheye strength"
+        tooltip="Strength (강도) of the barrel distortion: 100% = the lens as shot, 0% = fully corrected to a rectilinear 11 mm (like a lens-profile correction amount)."
+        value={settings.fisheyeStrength}
+        {...FISHEYE_CONFIG.strength}
+        defaultValue={profile.strength}
+        onChange={cameraActions.setFisheyeStrength}
+        formatValue={(v) => `${Math.round(v * 100)}%`}
+      />
+      <p className="panel-note" data-testid="fisheye-summary">
+        {fisheye.projection.exact ? `${fisheye.projection.name} ${fisheye.projection.formula}` : fisheye.projection.label}
+        {' · '}AoV {fisheye.horizontalDeg.toFixed(1)}° × {fisheye.verticalDeg.toFixed(1)}° · image circle{' '}
+        {Number.isFinite(fisheye.imageCircleMm) ? `Ø ${fisheye.imageCircleMm.toFixed(1)} mm` : 'unlimited'}
+      </p>
+      <button type="button" className="text-button" disabled={isProfile} onClick={cameraActions.resetFisheyeProfile}>
+        <RotateCcw size={12} aria-hidden="true" /> Lens profile (stereographic, 100%)
+      </button>
+    </div>
+  );
+}
+
 /** Camera mode: body/lens chips, exposure & focus, position. */
 function CameraControls() {
   const settings = useCameraState();
@@ -213,18 +260,23 @@ function CameraControls() {
             />
           ))}
         </div>
-        <div className="chip-row__chips">
+        <div className="control-group-label" id="lens-selection-label">
+          Lens Selection
+        </div>
+        <div className="chip-row__chips" role="group" aria-labelledby="lens-selection-label">
           {LENSES.map((lens) => (
             <Chip
               key={lens.id}
-              icon={Aperture}
-              label={`${lens.focalLengthMm} mm f/${lens.maxAperture}`}
+              icon={lens.fisheye ? Globe : Aperture}
+              label={`${lens.focalLengthMm} mm f/${lens.maxAperture}${lens.fisheye ? ' Fisheye' : ''}`}
               tooltip={`${lens.name} · MFD ${lens.minFocusDistanceM} m${lens.note ? ` · ⚠ ${lens.note}` : ''}`}
               active={settings.lensId === lens.id}
+              testId={`lens-${lens.id}`}
               onClick={() => cameraActions.setLens(lens.id)}
             />
           ))}
         </div>
+        {derived.lens.fisheye && <FisheyeControls lens={derived.lens} derived={derived} settings={settings} />}
       </Section>
       <Section id="camera-focus" title="Aperture & Focus" icon={Focus} defaultOpen>
         <IconSlider
@@ -239,9 +291,20 @@ function CameraControls() {
           formatValue={(index) => formatFNumber(stops[index])}
         />
         <div className="chip-row__chips">
-          {FOCUS_OPTIONS.map(({ mode, label, icon, tooltip }) => (
-            <Chip key={mode} icon={icon} label={label} tooltip={tooltip} active={settings.focusMode === mode} onClick={() => cameraActions.setFocusMode(mode)} />
-          ))}
+          {FOCUS_OPTIONS.map(({ mode, label, icon, tooltip }) => {
+            const noAf = derived.lens.manualFocusOnly && mode !== FOCUS_MODES.MANUAL;
+            return (
+              <Chip
+                key={mode}
+                icon={icon}
+                label={label}
+                tooltip={noAf ? `${derived.lens.name} is a manual-focus lens (no electronic contacts): no AF` : tooltip}
+                active={settings.focusMode === mode}
+                disabled={noAf}
+                onClick={() => cameraActions.setFocusMode(mode)}
+              />
+            );
+          })}
         </div>
         <IconSlider
           icon={Focus}
