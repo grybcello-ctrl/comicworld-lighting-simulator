@@ -26,6 +26,7 @@ src/
 │  ├─ cameraStore.js          # appMode ('lighting' | 'camera') + photo-camera settings, AF targets
 │  ├─ viewStore.js            # Environment toggles, background brightness, bokeh offset
 │  ├─ poseStore.js            # Pose Mode: bone list, selection, rest rotations
+│  ├─ panelStore.js           # Accordion open states, side panel visibility (UI only)
 │  ├─ screenshotService.js    # Canvas capture bridge (button ↔ renderer)
 │  └─ cameraSelectors.js      # Derived optics (AoV, DoF, blur) for panel + viewfinder
 ├─ postprocessing/
@@ -66,9 +67,9 @@ src/
    │  ├─ ScreenshotBridge.jsx # Capture without helper meshes
    │  ├─ PoseController.jsx   # TransformControls (rotate) on the selected bone
    │  └─ fixtures/index.js    # shape key → 3D renderer registry
-   ├─ viewport/               # Viewfinder overlay, Setup HUD, Take Screenshot button
-   ├─ ui/                     # IconButton, TooltipLayer, Popover
-   └─ panel/                  # Bottom panel: BottomPanel, ModeTabs, lighting/ + camera/ rows
+   ├─ viewport/               # Viewfinder overlay, Take Screenshot button
+   ├─ ui/                     # Accordion, IconSlider + Chip, TooltipLayer
+   └─ panel/                  # InfoPanel (left), RightPanel + lighting/LightAccordion (right), ModeTabs
 ```
 
 ## Adding equipment
@@ -300,17 +301,17 @@ None of these cast shadows or emit light. With the background and spheres off, b
 - **Screenshots** never include the gizmo.
 - **The mannequin** has no skeleton, so Pose Mode needs a rigged glTF/GLB (e.g. a Mixamo character).
 
-## Layout: bottom panel and HUD
+## Layout (Lightroom-style)
 
-The 3D view fills the window; the controls sit in a bottom panel (`components/panel/BottomPanel.jsx`). On the left is a mode rail (Lighting / Camera), followed by three rows of fixed height. Narrow windows scroll a row sideways (`overflow-x: auto`) instead of wrapping it.
+A dark, three-column layout under a top bar. The top bar holds the Lighting | Camera module picker and buttons that show or hide the side panels.
 
-| Row | Lighting mode | Camera mode |
-|---|---|---|
-| 1 · Equipment | Light chips (select, on/off, add, details, remove) · strobes · compatible modifiers · grids / diffuser · gels · presets | Bodies · lenses · focus mode · optics details |
-| 2 · Sliders | Power, focusing rod, Kelvin, azimuth / elevation / distance, shift & tilt (expandable) · environment sliders | F-stop, focus distance, shooting distance, camera / aim height · environment sliders |
-| 3 · Options | Subject + upload · views (Full body, Face, Top, Front, Side, Quarter) · fixtures / light rays · environment toggles · Pose Mode · setup JSON | Fixtures in frame · environment toggles |
+| Column | Role |
+|---|---|
+| **Left · Info** (`panel/InfoPanel.jsx`) | Read-only viewer. Camera settings and optics; every light's equipment, power (level · Ws of max), color (Kelvin, gel swatch), XYZ position, distance, height, azimuth and elevation; beam & shadow parameters of the selected light; subject / model readout. |
+| **Center** | The 3D view, viewfinder overlay and Take Screenshot button. |
+| **Right · Controls** (`panel/RightPanel.jsx`) | Controls only. Each light is an accordion titled like "Profoto B10X Plus (Key Light)". Inside are icon sliders (power, focusing rod, Kelvin, azimuth, elevation, distance, plus shift & tilt when expanded) and chips (strobe, compatible modifiers, grid / diffuser, Kelvin + gels). Presets, Environment, View, Subject & Pose and Setup file follow as further accordions. Camera mode has Body & Lens, Aperture & Focus, Camera position and Environment. |
 
-- **Equipment buttons** are `lucide-react` icons with a short caption. Hovering or focusing one shows the full catalog name in a tooltip (`ui/TooltipLayer.jsx`, a single fixed layer, so the scrolling rows never clip it).
-- **Popovers:** readouts that do not fit a row (beam / shadow parameters, model details, camera optics) open in a popover above the panel.
-- **Setup HUD:** a transparent overlay at the top left of the 3D view (`viewport/SetupHud.jsx`). It lists the camera settings and, for every light, the live distance to the head, azimuth, elevation, fixture height and power. It is computed from the same selectors as the scene, so it follows every slider, and it is HTML only, so it never appears in screenshots.
-- **State:** the redesign only changes UI components. All state lives in the existing stores and contexts. Both modes' rows stay mounted and are only hidden, so switching modes keeps the panel state. At the same canvas size the 3D render is pixel-identical to the previous layout.
+- **Sliders and chips** (`ui/IconSlider.jsx`) show an icon instead of a text label; hovering shows the full name. Double-clicking a slider's icon resets it.
+- **Accordions** (`ui/Accordion.jsx`) animate their height. A closed body stays mounted but `inert`. Opening a light's accordion selects the light, and selecting a light in the 3D view opens its accordion. Open states live in `state/panelStore.js`, apart from the scene stores.
+- **Default scene:** Key Light (Profoto B10X Plus + Parabolix 35D) and Fill Light (Profoto B10 + OCF Softbox 1×4′), preset `key-fill`.
+- **Rendering is unchanged:** with the same preset and canvas size the 3D render is pixel-identical to the previous layout.

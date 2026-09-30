@@ -1,50 +1,8 @@
 /** Small, reusable form controls for the control panel. */
 
 /**
- * Range slider with a label/value row. `compact` (bottom panel rows): fixed
- * width, the hint moves into the hover tooltip so the row keeps one height.
- */
-export function SliderField({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  formatValue = String,
-  hint,
-  disabled = false,
-  compact = false,
-  tooltip,
-}) {
-  const tip = tooltip ?? (compact && hint ? `${label} — ${hint}` : undefined);
-  return (
-    <label
-      className={`field ${compact ? 'field--compact' : ''} ${disabled ? 'field--disabled' : ''}`}
-      data-tooltip={tip}
-    >
-      <span className="field__row">
-        <span className="field__label">{label}</span>
-        <span className="field__value">{formatValue(value)}</span>
-      </span>
-      {hint && !compact && <span className="field__hint">{hint}</span>}
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        disabled={disabled}
-        aria-label={label}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-    </label>
-  );
-}
-
-/**
- * Checkbox toggle. With `icon` it renders as a pill ("toggle chip") for the
- * bottom panel's option row; the checkbox stays the accessible control.
+ * Checkbox toggle. With `icon` it renders as a pill ("toggle chip"); the
+ * checkbox stays the accessible control.
  */
 export function ToggleField({ label, checked, onChange, disabled = false, title, icon: Icon, className = '' }) {
   return (

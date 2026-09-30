@@ -2,7 +2,6 @@ import { FileDown, FileUp } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
 import { parseSetup, SetupImportError, setupFileName, setupToJson } from '../../state/setupSerializer.js';
-import { IconButton, RowGroup } from '../ui/IconButton.jsx';
 
 /** Triggers a browser download of `text` as a file. */
 function downloadText(text, fileName, mimeType = 'application/json') {
@@ -17,7 +16,7 @@ function downloadText(text, fileName, mimeType = 'application/json') {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-/** Export / import of the complete lighting setup as JSON (status inline, full text in the tooltip). */
+/** Export / import of the complete lighting setup as JSON. */
 export function SetupFileControls() {
   const { lights } = useLightingState();
   const { importLights } = useLightingActions();
@@ -49,27 +48,29 @@ export function SetupFileControls() {
   };
 
   return (
-    <RowGroup title="Setup (JSON)">
-      <IconButton icon={FileDown} caption="Export" label="Export JSON" onClick={handleExport} disabled={lights.length === 0} />
-      <IconButton icon={FileUp} caption="Import" label="Import JSON" onClick={() => fileInputRef.current?.click()} />
-      <input
-        ref={fileInputRef}
-        className="visually-hidden"
-        type="file"
-        accept="application/json,.json"
-        onChange={handleFile}
-        aria-label="Import setup JSON file"
-        data-testid="setup-import-input"
-      />
+    <>
+      <div className="button-line">
+        <button type="button" className="text-button" onClick={handleExport} disabled={lights.length === 0}>
+          <FileDown size={13} aria-hidden="true" /> Export JSON
+        </button>
+        <button type="button" className="text-button" onClick={() => fileInputRef.current?.click()}>
+          <FileUp size={13} aria-hidden="true" /> Import JSON
+        </button>
+        <input
+          ref={fileInputRef}
+          className="visually-hidden"
+          type="file"
+          accept="application/json,.json"
+          onChange={handleFile}
+          aria-label="Import setup JSON file"
+          data-testid="setup-import-input"
+        />
+      </div>
       {status && (
-        <span
-          className={`status-message status-message--inline ${status.kind === 'error' ? 'status-message--error' : ''}`}
-          role="status"
-          data-tooltip={status.text}
-        >
+        <p className={`panel-note ${status.kind === 'error' ? 'panel-note--error' : ''}`} role="status">
           {status.text}
-        </span>
+        </p>
       )}
-    </RowGroup>
+    </>
   );
 }

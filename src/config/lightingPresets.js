@@ -10,6 +10,28 @@
  */
 export const LIGHTING_PRESETS = [
   {
+    // Default scene: a classic key + fill with the two B10-series heads.
+    id: 'key-fill',
+    name: 'Key + Fill (B10X Plus + B10)',
+    lights: [
+      {
+        label: 'Key Light',
+        strobeId: 'profoto-b10x-plus',
+        modifierId: 'parabolix-35d',
+        powerLevel: 7,
+        focusRod: 30,
+        placement: { azimuthDeg: 35, elevationDeg: 30, distance: 1.8 },
+      },
+      {
+        label: 'Fill Light',
+        strobeId: 'profoto-b10',
+        modifierId: 'profoto-ocf-softbox-1x4',
+        powerLevel: 5,
+        placement: { azimuthDeg: -45, elevationDeg: 5, distance: 2.2 },
+      },
+    ],
+  },
+  {
     id: 'para-fashion',
     name: 'Para Fashion (Para 133HR + Strip Rim)',
     lights: [

@@ -1,13 +1,11 @@
 /**
- * Icons and short captions for the bottom panel's equipment buttons. The
+ * Icons and short captions for the equipment chips. The
  * full catalog name is always the tooltip / accessible name; unknown catalog
  * entries fall back to a category icon and a shortened name, so new
  * equipment appears without UI changes.
  */
 import {
-  Aperture,
   BatteryCharging,
-  Camera,
   ChevronsUpDown,
   Circle,
   CircleDot,
@@ -122,8 +120,3 @@ export function presetIcon(preset) {
     caption: PRESET_CAPTIONS[preset.id] ?? shorten(preset.name),
   };
 }
-
-export const bodyIcon = (body) => ({ icon: Camera, caption: body.name.replace(/^FUJIFILM\s+GFX/, '') });
-
-/** "GF80mmF1.7 R WR" → "80 / 1.7" */
-export const lensIcon = (lens) => ({ icon: Aperture, caption: `${lens.focalLengthMm} / ${lens.maxAperture}` });
