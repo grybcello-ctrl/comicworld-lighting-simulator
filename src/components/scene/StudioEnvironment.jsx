@@ -12,17 +12,16 @@ import {
   Sprite,
   SpriteMaterial,
 } from 'three';
-import { APP_MODES, getLensById } from '../../config/cameraConfig.js';
+import { APP_MODES } from '../../config/cameraConfig.js';
 import {
   ANGLE_GUIDE_CONFIG,
   BOKEH_SPHERES_CONFIG,
   CYCLORAMA_CONFIG,
   FLOOR_GRID_CONFIG,
 } from '../../config/environmentConfig.js';
-import { selectCameraFrame } from '../../state/cameraSelectors.js';
+import { selectCameraOptics } from '../../state/cameraSelectors.js';
 import { useCameraState } from '../../state/cameraStore.js';
 import { useViewState } from '../../state/viewStore.js';
-import { angleOfViewDeg } from '../../utils/cameraOptics.js';
 
 const DEG = Math.PI / 180;
 
@@ -244,8 +243,9 @@ function createProtractor() {
 /** Photo camera floor position and its horizontal angle of view (a wedge on the floor). */
 function CameraWedge() {
   const settings = useCameraState();
-  const { lensId, shootingDistanceM } = settings;
-  const horizontalAovDeg = angleOfViewDeg(selectCameraFrame(settings).widthMm, getLensById(lensId).focalLengthMm);
+  const { shootingDistanceM } = settings;
+  // Projection-aware (a fisheye reaches 180°).
+  const horizontalAovDeg = selectCameraOptics(settings).angles.horizontalDeg;
   const objects = useMemo(() => {
     const c = ANGLE_GUIDE_CONFIG;
     const y = c.heightM;

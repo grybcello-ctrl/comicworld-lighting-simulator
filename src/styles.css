@@ -414,6 +414,27 @@ body,
   gap: 4px;
 }
 
+.control-group-label {
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lr-muted);
+}
+
+/* Fisheye curvature / strength, under the lens chips. */
+.fisheye-controls {
+  display: grid;
+  gap: 6px;
+  padding: 8px 0 2px 8px;
+  border-left: 2px solid #4a4a4a;
+}
+
+.fisheye-controls .text-button {
+  justify-self: start;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;

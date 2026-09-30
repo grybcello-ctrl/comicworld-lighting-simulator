@@ -166,6 +166,29 @@ function ImportedPoseInfo() {
   );
 }
 
+const CIRCLE_COVERAGE = {
+  full: 'covers the whole frame',
+  'long side': 'spans the long side, corners dark',
+  'short side': 'spans the short side only',
+  circular: 'circular image inside the frame',
+};
+
+/** Fisheye readout: projection, correction strength, image circle. */
+function fisheyeRows(fisheye) {
+  return [
+    {
+      label: 'Projection',
+      value: `${fisheye.projection.exact ? `${fisheye.projection.name} ${fisheye.projection.formula}` : fisheye.projection.label} · curvature ${fisheye.curvature.toFixed(2)} · strength ${Math.round(fisheye.strength * 100)}%`,
+    },
+    {
+      label: 'Image circle',
+      value: Number.isFinite(fisheye.imageCircleMm)
+        ? `Ø ${fisheye.imageCircleMm.toFixed(1)} mm (${fisheye.maxFieldDeg}° field) · ${CIRCLE_COVERAGE[fisheye.coverage]}`
+        : 'unlimited (fully corrected)',
+    },
+  ];
+}
+
 function CameraInfo() {
   const settings = useCameraState();
   const derived = useMemo(() => selectCameraOptics(settings), [settings]);
@@ -179,6 +202,7 @@ function CameraInfo() {
           { label: 'Body', value: `${body.name.replace('FUJIFILM ', '')} · ${sensor.widthMm} × ${sensor.heightMm} mm` },
           { label: 'Frame', value: `${frame.label}${frame.portrait ? ' portrait' : ''} · ${frame.widthMm.toFixed(1)} × ${frame.heightMm.toFixed(1)} mm${frame.native ? ' (full sensor)' : ' crop'}` },
           { label: 'Lens', value: lens.name },
+          ...(derived.fisheye ? fisheyeRows(derived.fisheye) : []),
           { label: 'Aperture', value: `${formatFNumber(settings.fNumber)} · Ø ${derived.optics.apertureDiameterMm.toFixed(1)} mm` },
           {
             label: 'Angle of view',
@@ -218,7 +242,10 @@ function CameraInfo() {
             { label: 'Eye distance (axial · line of sight)', value: `${formatMeters(derived.eyeDistanceM, 3)}${eyeLineM ? ` · ${formatMeters(eyeLineM, 3)}` : ''}` },
             { label: 'Face distance', value: formatMeters(derived.faceDistanceM, 3) },
             { label: 'Background blur at ∞', value: `${derived.optics.blurAtInfinityMm.toFixed(2)} mm (${(derived.optics.blurAtInfinityFrameShare * 100).toFixed(1)}% of width)` },
-            { label: 'Frame at focus plane', value: `${derived.fieldWidthM.toFixed(2)} × ${derived.fieldHeightM.toFixed(2)} m` },
+            {
+              label: 'Frame at focus plane',
+              value: derived.fieldWidthM === null ? '— (fisheye: no flat field)' : `${derived.fieldWidthM.toFixed(2)} × ${derived.fieldHeightM.toFixed(2)} m`,
+            },
             { label: 'Magnification', value: `1:${(1 / derived.magnification).toFixed(1)}` },
           ]}
         />

@@ -30,9 +30,11 @@ src/
 │  ├─ screenshotService.js    # Canvas capture bridge (button ↔ renderer)
 │  └─ cameraSelectors.js      # Derived optics (AoV, DoF, blur) for panel + viewfinder
 ├─ postprocessing/
-│  └─ PhysicalBokehPass.js    # Thin-lens depth of field (CoC from f, N, focus distance)
+│  ├─ PhysicalBokehPass.js    # Thin-lens depth of field (CoC from f, N, focus distance)
+│  └─ FisheyeLensPass.js      # Fisheye lens: 90° faces around the camera + projection shader
 ├─ utils/
 │  ├─ cameraOptics.js         # Thin-lens math: FOV fit, focus geometry, CoC, DoF
+│  ├─ fisheyeProjection.js    # Fisheye projection family, image circle, angles of view
 │  ├─ eyeAutofocus.js         # Eye AF: eye/head bones, bbox heuristic, skin-depth correction
 │  ├─ viewFit.js              # Overview framings that fit every fixture
 │  ├─ setupHud.js             # Screenshot HUD text
@@ -226,7 +228,7 @@ three.js dropped `KHR_materials_pbrSpecularGlossiness` in r147. Materials that s
 The tabs at the top of the panel switch `appMode` (`state/cameraStore.js`) between **Lighting Mode** (direct render, orbit camera, light rays and selection highlight) and **Camera Mode** (a photo camera with depth of field).
 
 - **Bodies:** FUJIFILM GFX100S and GFX100S II, both with a 43.8 × 32.9 mm sensor.
-- **Lenses:** GF55mmF1.7, GF55mm F3.5, GF80mmF1.7 and GF110mmF2.
+- **Lenses** (Lens Selection): GF55mmF1.7, GF55mm F3.5, GF80mmF1.7, GF110mmF2 and the TTArtisan 11mm f/2.8 Fish-eye (see below).
   - The GF55mm F3.5 is not a Fujifilm catalogue lens. It is modeled as requested; the closest real lens is the GF50mmF3.5 R LM WR, whose 0.35 m close focus is used.
 - **Angle of view:** the image frame (the 4:3 sensor, or an aspect crop of it, see below) is the largest centered rectangle that fits the canvas. `camera.fov` is chosen so that frame spans exactly the lens's angle of view, and `filmGauge` is set so `getFocalLength()` returns the lens focal length.
   - The diagonals come out at 52.9° / 37.8° / 28.0°, matching Fujifilm's specs.
@@ -245,6 +247,28 @@ The tabs at the top of the panel switch `appMode` (`state/cameraStore.js`) betwe
   - Post-processing resources exist only while camera mode is active.
 - **Exposure** does not follow the f-number: camera mode keeps the brightness of the lighting setup.
 
+
+### Fisheye lens (TTArtisan 11mm f/2.8 Fish-eye)
+
+The lens is modeled from its specifications: 11 mm, f/2.8–f/16, 0.17 m close focus, 180° field and stereographic projection `r = 2f·tan(θ/2)`. That gives a Ø 44 mm image circle. On the GFX sensor (43.8 × 32.9 mm) the circle spans the frame width (179.5° × 147.1°), and the corners stay black.
+- **No wide perspective FOV.** A perspective camera cannot show 180°, and it stretches the edges instead of bending them. `FisheyeLensPass` (EffectComposer, replacing the RenderPass) works in two steps:
+  1. It renders five 90° faces around the photo camera, in the camera's own frame, into one atlas with a depth texture. The back face never falls inside a 180° field, so it is skipped.
+  2. A full-screen shader maps each output pixel to its sensor position, then to a field angle θ through the projection, then to a ray, and samples the matching face with 4 taps per pixel.
+- **Curvature** (0–2) selects the projection within one family, with k = 1 − curvature:
+  - 0 rectilinear
+  - 0.5 stereographic (this lens)
+  - 1 equidistant
+  - 1.5 equisolid
+  - 2 orthographic
+
+  All of them keep the focal length's scale at the center.
+- **Strength** (0–100 %) blends the fisheye mapping with the rectilinear 11 mm, like a lens-profile correction amount: `θ(r) = (1 − s)·atan(r/f) + s·θ_fisheye(r)`. 100 % is the lens as shot; 0 % is fully corrected (126.7° wide).
+- **Reset:** double-clicking a slider icon, or **Lens profile**, restores 0.5 / 100 %.
+- **Depth of field:** the pass writes each ray's distance as depth, so `PhysicalBokehPass` blurs the fisheye image like any other. At f/2.8 almost everything is sharp. Only close focus (0.17 m) blurs the scene.
+- **Manual focus:** the lens has no electronic contacts, so selecting it switches to MF at the current focus distance. The next AF lens brings the previous AF mode back.
+- **Readouts:** angle of view, projection and image circle follow the settings in the info panel, the screenshot HUD and the floor angle guide.
+- **Accuracy:** markers at known angles, across face seams and with a tilted camera, land within 0.27 px of the formula (0.08° azimuth). The face atlas exists only while the fisheye is selected.
+- **Not modeled:** corner light falloff (exposure stays the same across lenses, as with the f-number) and chromatic aberration.
 
 ### Eye AF
 

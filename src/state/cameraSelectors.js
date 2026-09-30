@@ -11,6 +11,7 @@ import {
   lensState,
   minFocusDistanceM,
 } from '../utils/cameraOptics.js';
+import { fisheyeAnglesOfView, fisheyeProfile, imageCircleRadiusMm } from '../utils/fisheyeProjection.js';
 
 /**
  * Image frame of the current aspect setting (mm), with its ratio label.
@@ -44,6 +45,9 @@ export function selectCameraOptics(settings) {
   const eyeBlurMm = blurDiameterMm(optics, eyeDistanceM);
   const inFocus = (distanceM) => distanceM >= dof.nearM && distanceM <= dof.farM;
   const magnification = optics.imageDistanceMm / optics.objectDistanceMm;
+  // Fisheye: angles follow the lens projection and its image circle.
+  const fisheye = lens.fisheye ? fisheyeProfile(lens, settings) : null;
+  const fisheyeView = fisheye ? fisheyeAnglesOfView(frame, fisheye) : null;
   return {
     body,
     lens,
@@ -54,7 +58,9 @@ export function selectCameraOptics(settings) {
     cocMm,
     crop,
     fNumbers: availableFNumbers(lens),
-    angles: anglesOfView(frame, lens.focalLengthMm),
+    angles: fisheyeView ?? anglesOfView(frame, lens.focalLengthMm),
+    // null for rectilinear lenses.
+    fisheye: fisheye && { ...fisheye, ...fisheyeView, imageCircleRadiusMm: imageCircleRadiusMm(fisheye) },
     equivalentFocalLengthMm: lens.focalLengthMm * crop,
     equivalentFNumber: settings.fNumber * crop,
     focusRangeM: { min: minFocusDistanceM(lens), max: CAMERA_LIMITS.focusDistanceM.max },
@@ -65,9 +71,9 @@ export function selectCameraOptics(settings) {
     eyeBlurMm,
     eyeInFocus: inFocus(eyeDistanceM),
     magnification,
-    // Frame size at the focus plane (m).
-    fieldWidthM: frame.widthMm / magnification / 1000,
-    fieldHeightM: frame.heightMm / magnification / 1000,
+    // Frame size at the focus plane (m); a fisheye has no flat field (null).
+    fieldWidthM: fisheye ? null : frame.widthMm / magnification / 1000,
+    fieldHeightM: fisheye ? null : frame.heightMm / magnification / 1000,
   };
 }
 

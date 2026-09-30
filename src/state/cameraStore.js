@@ -19,10 +19,12 @@ import {
   CAMERA_DEFAULTS,
   CAMERA_LIMITS,
   CAMERA_OPTICS_CONFIG,
+  FISHEYE_CONFIG,
   FOCUS_MODES,
   getAspectById,
   getBodyById,
   getLensById,
+  LENSES,
 } from '../config/cameraConfig.js';
 import { axialDistanceM, cameraPose, clampFocusDistanceM, snapFNumber } from '../utils/cameraOptics.js';
 
@@ -78,10 +80,19 @@ function withDerived(next) {
   };
 }
 
+/** Curvature / strength of the fisheye lens profile (config) — what "Reset to lens profile" restores. */
+const fisheyeDefaults = () => {
+  const profile = LENSES.find((lens) => lens.fisheye)?.fisheye ?? { curvature: 0.5, strength: 1 };
+  return { fisheyeCurvature: profile.curvature, fisheyeStrength: profile.strength };
+};
+
 let state = withDerived({
   appMode: APP_MODES.LIGHTING,
   ...CAMERA_DEFAULTS,
+  ...fisheyeDefaults(),
   focusMode: FOCUS_MODES.AF_EYE,
+  // AF mode to restore when a manual-focus-only lens is swapped for an AF lens.
+  focusModeBeforeManualLens: null,
   focusDistanceM: CAMERA_DEFAULTS.shootingDistanceM,
   // Measured once per subject (AutofocusTargets.jsx). The camera always sits on
   // the +z axis, so any pose gets its distances by axial projection — no
@@ -135,20 +146,46 @@ export const cameraActions = {
   toggleAspectOrientation() {
     setState({ aspectFlipped: !state.aspectFlipped });
   },
-  /** A new lens keeps the aperture if it can, else snaps to the nearest offered stop. */
+  /**
+   * A new lens keeps the aperture if it can, else snaps to the nearest offered
+   * stop. A manual-focus-only lens (no contacts) switches to MF at the current
+   * focus distance; the next AF lens brings the previous AF mode back.
+   */
   setLens(lensId) {
     const lens = getLensById(lensId);
-    setState({ lensId: lens.id, fNumber: snapFNumber(lens, state.fNumber) });
+    const changes = { lensId: lens.id, fNumber: snapFNumber(lens, state.fNumber) };
+    if (lens.manualFocusOnly && state.focusMode !== FOCUS_MODES.MANUAL) {
+      changes.focusMode = FOCUS_MODES.MANUAL;
+      changes.focusModeBeforeManualLens = state.focusMode;
+    } else if (!lens.manualFocusOnly && state.focusModeBeforeManualLens) {
+      changes.focusMode = state.focusModeBeforeManualLens;
+      changes.focusModeBeforeManualLens = null;
+    }
+    setState(changes);
   },
   setFNumber(fNumber) {
     setState({ fNumber: snapFNumber(getLensById(state.lensId), fNumber) });
+  },
+  /** Fisheye projection curvature (0 rectilinear … 0.5 stereographic … 2 orthographic). */
+  setFisheyeCurvature(value) {
+    setState({ fisheyeCurvature: clamp(value, FISHEYE_CONFIG.curvature) });
+  },
+  /** Share of the fisheye mapping: 1 = as shot, 0 = fully corrected. */
+  setFisheyeStrength(value) {
+    setState({ fisheyeStrength: clamp(value, FISHEYE_CONFIG.strength) });
+  },
+  resetFisheyeProfile() {
+    setState(fisheyeDefaults());
   },
   /** Moving the focus slider switches to manual focus. */
   setFocusDistance(focusDistanceM) {
     setState({ focusMode: FOCUS_MODES.MANUAL, focusDistanceM });
   },
   setFocusMode(focusMode) {
-    if (Object.values(FOCUS_MODES).includes(focusMode)) setState({ focusMode });
+    if (!Object.values(FOCUS_MODES).includes(focusMode)) return;
+    // A lens without electronic contacts cannot autofocus.
+    if (getLensById(state.lensId).manualFocusOnly && focusMode !== FOCUS_MODES.MANUAL) return;
+    setState({ focusMode, focusModeBeforeManualLens: null });
   },
   setShootingDistance(value) {
     setState({ shootingDistanceM: clamp(value, CAMERA_LIMITS.shootingDistanceM) });
