@@ -1,7 +1,7 @@
 import { useThree } from '@react-three/fiber';
 import { useLayoutEffect, useRef } from 'react';
 import { SUBJECT_TYPES } from '../../config/sceneConfig.js';
-import { useSubjectState } from '../../state/subjectStore.js';
+import { subjectKeyOf, useSubjectState } from '../../state/subjectStore.js';
 import { installSlopeBias } from '../../utils/shadowSides.js';
 import { MannequinSubject } from './MannequinSubject.jsx';
 
@@ -31,9 +31,10 @@ function useShadowRefreshOnChange(subjectKey) {
  * subject store owns (and disposes) the object — so there is exactly one owner.
  */
 export function SubjectModel() {
-  const { subjectType, model } = useSubjectState();
+  const subject = useSubjectState();
+  const { subjectType, model } = subject;
   const showCustom = subjectType === SUBJECT_TYPES.CUSTOM && model.object !== null;
-  const subjectKey = showCustom ? `custom-${model.id}` : SUBJECT_TYPES.MANNEQUIN;
+  const subjectKey = subjectKeyOf(subject);
   const groupRef = useRef(null);
 
   // Per-light slope bias in the shadow pass for every subject mesh (shadowSides.js).

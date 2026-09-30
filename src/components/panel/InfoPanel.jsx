@@ -1,4 +1,4 @@
-import { Camera, Info, Lightbulb, User } from 'lucide-react';
+import { Camera, Image, Info, Lightbulb, User } from 'lucide-react';
 import { useMemo } from 'react';
 import { getGridById, getModifierById, getStrobeById } from '../../config/equipmentRegistry.js';
 import { SUBJECT_TARGET } from '../../config/sceneConfig.js';
@@ -7,12 +7,15 @@ import { useCameraState } from '../../state/cameraStore.js';
 import { useLightingActions, useLightingState } from '../../state/LightingContext.jsx';
 import { getLightColorInputs, selectFixturePose, selectLightColor, selectLightRig } from '../../state/lightSelectors.js';
 import { isSectionOpen, panelActions, usePanelState } from '../../state/panelStore.js';
+import { useViewState } from '../../state/viewStore.js';
+import { blurDiameterMm } from '../../utils/cameraOptics.js';
 import { formatPowerLevel, formatWs, powerLevelToWs } from '../../utils/lightMath.js';
 import { Accordion } from '../ui/Accordion.jsx';
 import { focusStatus, FOCUS_MODE_LABELS, lineOfSightM } from './camera/cameraFormat.js';
 import { ColorSwatch, ReadoutList } from './fields.jsx';
 import { lightTitle } from './lighting/LightAccordion.jsx';
 import { BeamReadout, ColorReadout } from './LightReadouts.jsx';
+import { usePoseState } from '../../state/poseStore.js';
 import { SubjectInfo } from './SubjectControls.jsx';
 
 const RAD_TO_DEG = 180 / Math.PI;
@@ -115,10 +118,58 @@ function SelectedLightDetails({ light }) {
   );
 }
 
+/**
+ * Background separation: how much darker the wall is than the subject for
+ * each light that is on (inverse square of the real distances: light →
+ * head vs. light → wall point behind the head), and how blurred it is.
+ */
+function BackgroundInfo() {
+  const { lights } = useLightingState();
+  const view = useViewState();
+  const camera = useCameraState();
+  const optics = useMemo(() => selectCameraOptics(camera), [camera]);
+  if (!view.showBackground) return <p className="panel-note">Background off.</p>;
+  const wallPoint = [SUBJECT_TARGET[0], SUBJECT_TARGET[1], -view.backgroundDistanceM];
+  const wallFromCameraM = camera.shootingDistanceM + view.backgroundDistanceM;
+  const blurMm = Math.abs(blurDiameterMm(optics.optics, wallFromCameraM));
+  const rows = [
+    { label: 'Distance', value: `${view.backgroundDistanceM.toFixed(1)} m behind the subject · ${wallFromCameraM.toFixed(1)} m from the camera` },
+    {
+      label: 'Wall blur (camera)',
+      value: `Ø ${blurMm.toFixed(2)} mm · ${((100 * blurMm) / optics.frame.widthMm).toFixed(1)}% of the frame width`,
+    },
+  ];
+  for (const light of lights.filter((item) => item.enabled)) {
+    const { position, distanceToSubject } = selectFixturePose(light);
+    const toWall = Math.hypot(...position.map((v, i) => v - wallPoint[i]));
+    rows.push({ label: `${light.label} → wall`, value: `${(2 * Math.log2(distanceToSubject / toWall)).toFixed(1)} EV vs. subject (1/d²)` });
+  }
+  return <ReadoutList items={rows} />;
+}
+
+/** Imported pose: source, mapping and what could not be transferred. */
+function ImportedPoseInfo() {
+  const { importedPose } = usePoseState();
+  if (!importedPose) return null;
+  const clip = importedPose.clips[importedPose.clipIndex];
+  return (
+    <ReadoutList
+      items={[
+        { label: 'Pose file', value: `${importedPose.fileName} (${importedPose.format})` },
+        { label: 'Clip · frame', value: clip ? `${clip.name} · ${importedPose.frame} / ${clip.frames - 1}` : 'static pose (skin bind pose as rest)' },
+        { label: 'Retargeted bones', value: `${importedPose.applied.length} · rest: ${importedPose.restKind}` },
+        { label: 'Not in the pose file', value: importedPose.missingInSource.join(', ') || '—' },
+        { label: 'Not on the subject', value: importedPose.missingInTarget.join(', ') || '—' },
+        { label: 'Set on the floor', value: `${importedPose.groundShiftM >= 0 ? '+' : ''}${(importedPose.groundShiftM * 100).toFixed(1)} cm` },
+      ]}
+    />
+  );
+}
+
 function CameraInfo() {
   const settings = useCameraState();
   const derived = useMemo(() => selectCameraOptics(settings), [settings]);
-  const { sensor, lens, angles, dof, body } = derived;
+  const { sensor, frame, lens, angles, dof, body } = derived;
   const eyeTarget = settings.eyeTarget;
   const eyeLineM = lineOfSightM(settings, eyeTarget?.point);
   return (
@@ -126,6 +177,7 @@ function CameraInfo() {
       <ReadoutList
         items={[
           { label: 'Body', value: `${body.name.replace('FUJIFILM ', '')} · ${sensor.widthMm} × ${sensor.heightMm} mm` },
+          { label: 'Frame', value: `${frame.label}${frame.portrait ? ' portrait' : ''} · ${frame.widthMm.toFixed(1)} × ${frame.heightMm.toFixed(1)} mm${frame.native ? ' (full sensor)' : ' crop'}` },
           { label: 'Lens', value: lens.name },
           { label: 'Aperture', value: `${formatFNumber(settings.fNumber)} · Ø ${derived.optics.apertureDiameterMm.toFixed(1)} mm` },
           {
@@ -200,6 +252,9 @@ export function InfoPanel() {
           <LightInfoCard key={light.id} light={light} isSelected={light.id === selectedLightId} />
         ))}
       </Section>
+      <Section id="background" title="Background" icon={Image} defaultOpen={false}>
+        <BackgroundInfo />
+      </Section>
       {selected && (
         <Section id="selected-light" title={`Beam & shadow · ${selected.label}`} icon={Info} defaultOpen={false}>
           <SelectedLightDetails light={selected} />
@@ -207,6 +262,7 @@ export function InfoPanel() {
       )}
       <Section id="subject" title="Subject" icon={User} defaultOpen={false}>
         <SubjectInfo />
+        <ImportedPoseInfo />
       </Section>
     </div>
   );

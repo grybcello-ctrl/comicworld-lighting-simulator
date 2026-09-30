@@ -11,12 +11,12 @@ import { composeScreenshot, downloadCanvas, screenshotFileName } from '../../uti
 import { buildSetupHud } from '../../utils/setupHud.js';
 
 /**
- * In camera mode the image is cropped to the sensor frame (what the
+ * In camera mode the image is cropped to the image frame (aspect crop, what the
  * viewfinder shows); in lighting mode the whole view is kept.
  */
 function cropFor(camera, optics, shot) {
   if (camera.appMode !== APP_MODES.CAMERA) return { x: 0, y: 0, width: shot.width, height: shot.height };
-  const { frame } = frameCanvasFit(optics.sensor, optics.lens.focalLengthMm, shot.cssWidth, shot.cssHeight);
+  const { frame } = frameCanvasFit(optics.frame, optics.lens.focalLengthMm, shot.cssWidth, shot.cssHeight);
   const scale = shot.width / shot.cssWidth;
   const x = Math.round(frame.x * scale);
   const y = Math.round(frame.y * scale);

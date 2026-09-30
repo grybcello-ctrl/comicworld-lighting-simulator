@@ -1,7 +1,7 @@
-import { Upload } from 'lucide-react';
+import { RotateCcw, RotateCw, Undo2, Upload } from 'lucide-react';
 import { useRef } from 'react';
 import { SUBJECT_CONFIG, SUBJECT_TYPES } from '../../config/sceneConfig.js';
-import { loadCustomModel, setSubjectType, useSubjectState } from '../../state/subjectStore.js';
+import { loadCustomModel, rotateCustomModel, setSubjectType, useSubjectState } from '../../state/subjectStore.js';
 import { MODEL_FILE_ACCEPT } from '../../utils/modelLoader.js';
 import { ReadoutList } from './fields.jsx';
 
@@ -52,6 +52,8 @@ function ModelReadout({ info }) {
   }
   const compression = info.extensionsUsed.filter((name) => /draco|meshopt/i.test(name));
   if (compression.length) notes.push(`decoded ${compression.join(', ')}`);
+  const legacy = info.extensionsUsed.filter((name) => /^(OBJ|FBX):/.test(name));
+  if (legacy.length) notes.push(legacy.join(', '));
   if (info.animationCount) notes.push(`${info.animationCount} animation(s) not played (static pose)`);
   if (info.missingFiles.length) notes.push(`missing: ${info.missingFiles.join(', ')}`);
   if (info.unsupportedExtensions.length) notes.push(`unsupported glTF extensions: ${info.unsupportedExtensions.join(', ')}`);
@@ -64,6 +66,8 @@ function ModelReadout({ info }) {
   if (info.ambiguousFiles.length) notes.push(`ambiguous names: ${info.ambiguousFiles.join(', ')}`);
   const { colorTextures, alreadySrgb, corrected, conflicts } = info.colorSpaces;
 
+  const { orientation } = info;
+  const manual = orientation ? Object.entries(orientation.manual ?? {}).filter(([, deg]) => deg).map(([axis, deg]) => `${axis.toUpperCase()} ${deg > 0 ? '+' : ''}${deg}°`) : [];
   const items = [
     {
       label: 'File',
@@ -113,6 +117,14 @@ function ModelReadout({ info }) {
           }`
         : 'none',
     },
+    ...(orientation
+      ? [
+          {
+            label: 'Front alignment',
+            value: `${orientation.detail}${orientation.confident ? '' : ' · low confidence — check and use the turn buttons'}${manual.length ? ` · manual ${manual.join(', ')}` : ''}`,
+          },
+        ]
+      : []),
     { label: 'Original size (model units)', value: formatVector(info.originalSize, 3) },
     { label: 'Auto scale', value: `× ${info.scale.toPrecision(4)} → ${info.fittedSize[1].toFixed(3)} m tall` },
     { label: 'Fitted size W × H × D', value: `${formatVector(info.fittedSize)} m` },
@@ -171,7 +183,7 @@ export function SubjectControls() {
           data-tooltip={`Loaded locally — nothing is uploaded. For a .gltf with separate files, select the .gltf together with its .bin and textures. Auto-fitted to ${SUBJECT_CONFIG.targetHeightM} m.`}
           onClick={() => inputRef.current?.click()}
         >
-          <Upload size={13} aria-hidden="true" /> {model.object ? 'Replace model (.glb / .gltf)…' : 'Upload model (.glb / .gltf)…'}
+          <Upload size={13} aria-hidden="true" /> {model.object ? 'Replace model (.glb / .gltf / .obj / .fbx)…' : 'Upload model (.glb / .gltf / .obj / .fbx)…'}
         </button>
       )}
       <input
@@ -194,6 +206,28 @@ export function SubjectControls() {
           {model.error}
           {model.object ? ' The previous model is still shown.' : ''}
         </p>
+      )}
+      {isCustom && model.object && model.info?.orientation && (
+        <div className="orientation-controls" data-testid="orientation-controls">
+          <span className="panel-note">
+            Facing the camera (auto: {model.info.orientation.method}
+            {model.info.orientation.rotatedDeg > 0.5 ? `, turned ${model.info.orientation.rotatedDeg.toFixed(0)}°` : ', as in the file'})
+          </span>
+          <div className="button-line">
+            <button type="button" className="text-button" data-tooltip="Turn left 90° (about the vertical axis)" onClick={() => rotateCustomModel('y', 90)}>
+              <RotateCcw size={13} aria-hidden="true" /> 90°
+            </button>
+            <button type="button" className="text-button" data-tooltip="Turn right 90°" onClick={() => rotateCustomModel('y', -90)}>
+              <RotateCw size={13} aria-hidden="true" /> 90°
+            </button>
+            <button type="button" className="text-button" data-tooltip="Turn around (180°)" onClick={() => rotateCustomModel('y', 180)}>
+              180°
+            </button>
+            <button type="button" className="text-button" data-tooltip="Tip over 90° about the left–right axis (for a model lying down)" onClick={() => rotateCustomModel('x', 90)}>
+              <Undo2 size={13} aria-hidden="true" /> Stand up
+            </button>
+          </div>
+        </div>
       )}
       {isCustom && !model.object && !model.loadingFileName && !model.error && (
         <p className="panel-note">No model loaded yet — the mannequin is shown meanwhile.</p>

@@ -106,7 +106,7 @@ export function splitModelFiles(files) {
   const models = list.filter((file) => SUBJECT_CONFIG.modelExtensions.includes(extensionOf(file.name)));
   if (models.length === 0) {
     const names = list.map((file) => file.name).join(', ') || 'nothing';
-    throw new ModelFileError(`Choose a .glb or .gltf file (selected: ${names}).`);
+    throw new ModelFileError(`Choose a .glb, .gltf, .obj or .fbx file (selected: ${names}).`);
   }
   if (models.length > 1) {
     throw new ModelFileError(`Select one model at a time (got ${models.map((file) => file.name).join(', ')}).`);

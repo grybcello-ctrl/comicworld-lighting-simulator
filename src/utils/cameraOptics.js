@@ -49,7 +49,27 @@ export function snapFNumber(lens, fNumber) {
 }
 
 /**
- * How the sensor frame maps onto the canvas: the 4:3 frame is fitted inside
+ * Image frame (mm) for an output aspect ratio: the largest rectangle of
+ * `ratio` = width / height inside the sensor. Portrait ratios turn the sensor
+ * upright first (the camera is rotated), so e.g. 2:3 uses 29.2 × 43.8 mm and
+ * 3:2 uses 43.8 × 29.2 mm. Ratios within 1% of the sensor's own use it whole.
+ * @returns {{ widthMm: number, heightMm: number, aspect: number, portrait: boolean, native: boolean }}
+ */
+export function cropFrame(sensor, ratio) {
+  const portrait = ratio < 1;
+  const sensorW = portrait ? Math.min(sensor.widthMm, sensor.heightMm) : Math.max(sensor.widthMm, sensor.heightMm);
+  const sensorH = portrait ? Math.max(sensor.widthMm, sensor.heightMm) : Math.min(sensor.widthMm, sensor.heightMm);
+  const sensorAspect = sensorW / sensorH;
+  if (Math.abs(ratio / sensorAspect - 1) < 0.01) {
+    return { widthMm: sensorW, heightMm: sensorH, aspect: sensorAspect, portrait, native: true };
+  }
+  const [widthMm, heightMm] = ratio > sensorAspect ? [sensorW, sensorW / ratio] : [sensorH * ratio, sensorH];
+  return { widthMm, heightMm, aspect: widthMm / heightMm, portrait, native: false };
+}
+
+/**
+ * How the image frame maps onto the canvas: the frame (sensor or crop,
+ * see cropFrame) is fitted inside
  * the canvas (letter-/pillar-boxed); the render covers the whole canvas, the
  * viewfinder overlay masks what lies outside the frame.
  *

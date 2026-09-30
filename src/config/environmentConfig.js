@@ -21,6 +21,8 @@ export const ENVIRONMENT_DEFAULTS = Object.freeze({
  */
 export const ENVIRONMENT_ADJUST_DEFAULTS = Object.freeze({
   backgroundBrightness: 1,
+  // Subject (z = 0) → background wall, meters. The wall sits at z = −distance.
+  backgroundDistanceM: 3,
   bokehOffsetX: 0,
   bokehOffsetY: 0,
   bokehOffsetZ: 0,
@@ -28,10 +30,11 @@ export const ENVIRONMENT_ADJUST_DEFAULTS = Object.freeze({
 
 export const ENVIRONMENT_ADJUST_LIMITS = Object.freeze({
   backgroundBrightness: { min: 0, max: 3, step: 0.05 },
+  backgroundDistanceM: { min: 1, max: 50, step: 0.1 },
   bokehOffsetX: { min: -2, max: 2, step: 0.01 },
   bokehOffsetY: { min: -1, max: 1.5, step: 0.01 },
-  // + = towards the camera. The spheres sit 0.2–1.3 m in front of the wall.
-  bokehOffsetZ: { min: -0.2, max: 3, step: 0.01 },
+  // + = towards the camera, − = back towards (or past) a distant background.
+  bokehOffsetZ: { min: -45, max: 3, step: 0.01 },
 });
 
 /**
@@ -43,9 +46,14 @@ export const CYCLORAMA_CONFIG = Object.freeze({
   color: '#767676',
   roughness: 1,
   metalness: 0,
-  wallZ: -3,
+  // Minimum size; a distant wall grows so it still fills the frame
+  // (cycloramaSize in StudioEnvironment.jsx).
   widthM: 8,
   heightM: 4,
+  // The wall covers this half angle seen from `frameReferenceM` in front of the subject.
+  frameHalfWidthDeg: 24,
+  frameHalfHeightDeg: 18,
+  frameReferenceM: 4,
   coveRadiusM: 1,
   // Front edge of the floor apron (the camera usually stands at z = 2–4 m).
   apronFrontZ: 2.5,
@@ -53,6 +61,12 @@ export const CYCLORAMA_CONFIG = Object.freeze({
   apronLiftM: 0.001,
   coveSegments: 24,
 });
+
+/**
+ * Shadow frustum extension for a distant background (StudioLight.jsx): the
+ * standard far margin covers a wall up to `coveredDistanceM` behind the subject.
+ */
+export const BACKGROUND_SHADOW_REACH = Object.freeze({ coveredDistanceM: 3, obliqueFactor: 1.5 });
 
 /**
  * Small emissive spheres behind the subject: point highlights that turn into

@@ -952,3 +952,68 @@ body,
 .viewport-toolbar__status--error {
   color: var(--lr-danger);
 }
+
+/* ---------- Viewer toolbar: Camera View, aspect ratio, orientation ---------- */
+.viewport-camera-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 180px);
+}
+
+.viewer-chip-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(20, 20, 20, 0.7);
+  border-radius: 13px;
+}
+
+.viewer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 11px;
+  color: #cfcfcf;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: rgba(36, 36, 36, 0.85);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+}
+
+.viewer-chip-group .viewer-chip {
+  background: transparent;
+}
+
+.viewer-chip:hover {
+  color: #fff;
+  border-color: #666;
+}
+
+.viewer-chip--active,
+.viewer-chip-group .viewer-chip--active {
+  color: #111;
+  background: #d6d6d6;
+}
+
+.viewer-chip--strong {
+  font-weight: 600;
+}
+
+.pose-import,
+.orientation-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

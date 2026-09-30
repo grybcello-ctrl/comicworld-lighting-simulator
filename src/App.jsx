@@ -6,6 +6,7 @@ import { StudioCanvas } from './components/scene/StudioCanvas.jsx';
 import { TooltipLayer } from './components/ui/TooltipLayer.jsx';
 import { ScreenshotButton } from './components/viewport/ScreenshotButton.jsx';
 import { ViewfinderOverlay } from './components/viewport/ViewfinderOverlay.jsx';
+import { ViewportCameraToolbar } from './components/viewport/ViewportCameraToolbar.jsx';
 import { LightingProvider } from './state/LightingContext.jsx';
 import { panelActions, usePanelState } from './state/panelStore.js';
 
@@ -55,6 +56,7 @@ export default function App() {
         <main className="app-layout__viewport">
           <StudioCanvas />
           <ViewfinderOverlay />
+          <ViewportCameraToolbar />
           <ScreenshotButton />
         </main>
         <aside className="side-panel side-panel--right" aria-label="Controls" hidden={!showRight}>

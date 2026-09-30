@@ -9,6 +9,8 @@ import {
   selectLightRig,
   selectSpotPosition,
 } from '../../state/lightSelectors.js';
+import { BACKGROUND_SHADOW_REACH } from '../../config/environmentConfig.js';
+import { useViewState } from '../../state/viewStore.js';
 import { getBeamProfileTexture } from '../../utils/beamProfileTexture.js';
 import { parabolicHeadPositionM } from '../../utils/parabolicReflector.js';
 import { BeamRaysHelper } from './BeamRaysHelper.jsx';
@@ -89,6 +91,18 @@ export function StudioLight({ light, isSelected, showFixture = true, showLightRa
   const spot = rig?.spot;
   const shadow = spot?.shadow;
 
+  // The shadow frustum must reach a distant background wall, or the wall
+  // behind the subject is lit where the subject blocks the light. The default
+  // margin already covers the wall at its default distance; farther walls add
+  // their extra distance (×obliqueFactor for rays that hit the wall at an
+  // angle). Depth precision is set by the near plane, so a longer far plane
+  // costs nothing at the subject (the bias conversion changes by < 1%).
+  const { showBackground, backgroundDistanceM } = useViewState();
+  const backgroundExtraM = showBackground
+    ? Math.max(0, backgroundDistanceM - BACKGROUND_SHADOW_REACH.coveredDistanceM) * BACKGROUND_SHADOW_REACH.obliqueFactor
+    : 0;
+  const shadowCameraFar = shadow ? shadow.cameraFar + backgroundExtraM : 0;
+
   // Per-light slope bias for subject casters (utils/shadowSides.js reads it in
   // the shadow pass). It changes the depth map, so it is a shadow dependency.
   const slopeFactor = shadow?.slopeBias.factor;
@@ -107,7 +121,7 @@ export function StudioLight({ light, isSelected, showFixture = true, showLightRa
       spot?.angle,
       spot?.apexOffsetM,
       shadow?.cameraNear,
-      shadow?.cameraFar,
+      shadowCameraFar,
       slopeFactor,
       light.enabled,
     ],
@@ -199,7 +213,7 @@ export function StudioLight({ light, isSelected, showFixture = true, showLightRa
           shadow-bias={shadow.bias}
           shadow-normalBias={shadow.normalBias}
           shadow-camera-near={shadow.cameraNear}
-          shadow-camera-far={shadow.cameraFar}
+          shadow-camera-far={shadowCameraFar}
         />
       )}
       {spot && (

@@ -33,6 +33,7 @@
 import { createBlobUrlRegistry } from './blobUrlRegistry.js';
 import { bindUnreferencedTextures } from './externalTextureBinder.js';
 import { createSpecGlossPlugin } from './gltfSpecGlossPlugin.js';
+import { loadLegacyModel } from './legacyModelLoader.js';
 import { disposeObject3D } from './disposeObject3D.js';
 import { createResourceResolver, extensionOf, ModelFileError, splitModelFiles } from './modelFileSet.js';
 import { SUBJECT_CONFIG } from '../config/sceneConfig.js';
@@ -169,6 +170,38 @@ export function loadModelFromFiles(files) {
       resolver = createResourceResolver({ modelFile, resourceFiles, registry: blobUrls });
       const manager = new LoadingManager();
       manager.setURLModifier(resolver.resolveUrl);
+
+      if (['.obj', '.fbx'].includes(extensionOf(modelFile.name))) {
+        // OBJ / FBX: same file mapping, materials converted to PBR (legacyModelLoader.js).
+        const legacy = await loadLegacyModel({ modelFile, resourceFiles, manager, resolver });
+        if (cancelled) {
+          disposeObject3D(legacy.scene);
+          throw new ModelLoadError('Load cancelled.');
+        }
+        const report = resolver.report();
+        succeeded = true;
+        return {
+          scene: legacy.scene,
+          blobUrls,
+          fileName: modelFile.name,
+          totalBytes: [modelFile, ...resourceFiles].reduce((sum, file) => sum + file.size, 0),
+          resourceCount: resourceFiles.length,
+          mappedCount: report.mapped,
+          missingFiles: report.missing,
+          unusedFiles: report.unused,
+          ambiguousFiles: report.ambiguous,
+          substitutedFiles: report.substituted,
+          boundByName: [],
+          unboundImages: [],
+          imageSources: { embedded: 0, external: report.requested.length, total: report.requested.length },
+          modifierCalls: report.modifierCalls,
+          specGlossMaterials: [],
+          unsupportedExtensions: [],
+          extensionsUsed: [`${legacy.format}: ${legacy.convertedMaterials} material(s) → PBR`],
+          animationCount: legacy.animations.length,
+          loadMs: performance.now() - startedAt,
+        };
+      }
 
       // The glTF-specific Draco build (smaller than the default decoder).
       dracoLoader = new DRACOLoader(manager).setDecoderPath(DRACO_GLTF_CONFIG);

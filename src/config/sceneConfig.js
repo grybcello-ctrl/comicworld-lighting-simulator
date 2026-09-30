@@ -182,7 +182,8 @@ export const SUBJECT_CONFIG = Object.freeze({
   // Custom models are scaled so their bounding-box height equals this.
   targetHeightM: 1.725,
   // The main file of an upload; exactly one per selection.
-  modelExtensions: ['.glb', '.gltf'],
+  // glTF is preferred; OBJ (+ .mtl) and FBX are converted to PBR materials.
+  modelExtensions: ['.glb', '.gltf', '.obj', '.fbx'],
   // Custom-model shadow sides (utils/shadowSides.js):
   //   'auto'   thin sheets DoubleSide, closed solids BackSide (no self-shadowing)
   //   'double' every material shadowSide = DoubleSide
@@ -192,5 +193,5 @@ export const SUBJECT_CONFIG = Object.freeze({
   thinSurfaceOpenness: 1.8,
   // File-picker filter hint for resources a .gltf may reference. Every other
   // selected file is mapped too, whatever its extension (modelFileSet.js).
-  resourceExtensionHints: ['.bin', '.png', '.jpg', '.jpeg', '.webp', '.avif', '.ktx2'],
+  resourceExtensionHints: ['.bin', '.mtl', '.png', '.jpg', '.jpeg', '.webp', '.avif', '.ktx2', '.tga', '.bmp'],
 });

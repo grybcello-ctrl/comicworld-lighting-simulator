@@ -2,9 +2,9 @@ import { useThree } from '@react-three/fiber';
 import { useLayoutEffect } from 'react';
 import { Vector2, Vector3 } from 'three';
 import { AF_TARGET_MARKER_CONFIG } from '../../config/environmentConfig.js';
-import { SUBJECT_TARGET, SUBJECT_TYPES } from '../../config/sceneConfig.js';
+import { SUBJECT_TARGET } from '../../config/sceneConfig.js';
 import { cameraActions, useAfTargetPoint } from '../../state/cameraStore.js';
-import { useSubjectState } from '../../state/subjectStore.js';
+import { subjectKeyOf, useSubjectState } from '../../state/subjectStore.js';
 import { useViewState } from '../../state/viewStore.js';
 import { findEyeTarget, findFacePoint } from '../../utils/eyeAutofocus.js';
 
@@ -16,9 +16,8 @@ import { findEyeTarget, findFacePoint } from '../../utils/eyeAutofocus.js';
  */
 export function AutofocusTracker() {
   const scene = useThree((state) => state.scene);
-  const { subjectType, model } = useSubjectState();
-  // Same key as SubjectModel: the mannequin stays as placeholder until a model is ready.
-  const subjectKey = subjectType === SUBJECT_TYPES.CUSTOM && model.object ? `custom-${model.id}` : 'mannequin';
+  // Same key as SubjectModel: re-measured for a new model, orientation or imported pose.
+  const subjectKey = subjectKeyOf(useSubjectState());
 
   useLayoutEffect(() => {
     const subject = scene.getObjectByName('subject');
